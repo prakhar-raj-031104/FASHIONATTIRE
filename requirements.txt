@@ -1,0 +1,25 @@
+# --- Core DL ---
+torch>=2.1.0
+torchvision>=0.16.0
+
+# --- Models (HuggingFace) ---
+transformers>=4.40.0          # FashionCLIP (CLIPModel), BLIP captioner, SegFormer clothes parser
+sentence-transformers>=2.7.0  # caption/query sentence embeddings + optional cross-encoder rerank
+accelerate>=0.29.0            # device placement / fp16 inference
+pillow>=10.0.0
+
+# --- Vector search ---
+faiss-cpu>=1.8.0              # swap for faiss-gpu if you build against your CUDA
+
+# --- Web demo portal (optional; not needed for index/query/evaluate CLI) ---
+flask>=3.0
+
+# --- Utils ---
+pyyaml>=6.0
+numpy>=1.24
+tqdm>=4.66
+rich>=13.0                    # pretty CLI + logging
+
+# --- Optional: dataset acquisition helpers (not required at runtime) ---
+# datasets>=2.19.0
+# pycocotools>=2.0.7

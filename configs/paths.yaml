@@ -1,0 +1,17 @@
+# All filesystem locations in one place. Relative paths resolve from the repo root.
+data:
+  raw_images: data/raw            # put your image files (any subfolder structure) here
+  annotations: data/annotations   # optional: fashionpedia/coco json, if available
+  cache: data/cache               # HF model cache + intermediate crops
+
+index:
+  dir: indexes
+  faiss_global: indexes/global.faiss          # whole-image FashionCLIP vectors
+  faiss_caption: indexes/caption.faiss         # caption sentence vectors
+  faiss_region: indexes/region.faiss           # per-garment-region FashionCLIP vectors
+  metadata_db: indexes/metadata.sqlite         # image + region attributes/metadata
+
+outputs:
+  dir: outputs
+  logs: outputs/logs
+  results: outputs/results        # saved top-k result grids / json per query

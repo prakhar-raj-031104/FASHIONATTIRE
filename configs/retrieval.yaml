@@ -1,0 +1,35 @@
+# Retrieval + scoring configuration. This is where the ML contribution is tuned.
+#
+# Final score is a weighted fusion of four complementary signals. Each term exists to
+# fix a specific failure mode of vanilla CLIP:
+#
+#   global_clip      -> semantic/scene baseline (whole-image FashionCLIP vs query text)
+#   caption_sim      -> style/vibe inference via natural-language caption (query 4)
+#   attribute_match  -> explicit multi-attribute grounding: color/garment/env/style (query 1,2)
+#   region_binding   -> COMPOSITIONALITY: binds each color to the right garment region (query 5)
+#
+# Weights should sum to ~1.0. Tune on a small labelled validation set (see evaluation/).
+weights:
+  global_clip: 0.40
+  caption_sim: 0.20
+  attribute_match: 0.20
+  region_binding: 0.20
+
+search:
+  # First-stage candidate pool pulled from FAISS before fine-grained re-scoring.
+  candidate_pool: 200
+  top_k: 10
+
+attribute_match:
+  # How structured query attributes are compared to indexed image attributes.
+  # 'soft' uses the tagger's confidence; 'hard' uses thresholded presence.
+  mode: soft
+  present_threshold: 0.25
+
+region_binding:
+  # A query "(color, garment)" pair scores high only if SOME region matches BOTH the
+  # garment type and the color. This is the anti-CLIP-bag-of-words mechanism.
+  color_weight: 0.5
+  garment_weight: 0.5
+  # If a query has no explicit garment-color bindings, region_binding is skipped and its
+  # weight is redistributed to the other signals (see scorer.py).

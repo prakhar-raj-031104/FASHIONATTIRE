@@ -1,0 +1,45 @@
+# Model configuration. Swap any model by editing ONE line here — no code changes.
+# device: "auto" resolves to cuda if available, else cpu. Override to "cuda"/"cpu".
+device: auto
+dtype: float16          # float16 on GPU for speed/memory; forced to float32 on CPU
+
+fashion_clip:
+  # Fashion-domain CLIP. Understands garments/colors/styles far better than generic CLIP.
+  model: patrickjohncyh/fashion-clip
+  embed_dim: 512
+  batch_size: 32          # tuned for 4GB VRAM (RTX 2050); raise to 64 on an 8GB+ card
+
+captioner:
+  # BLIP-base (~250MB fp16) chosen for the 4GB RTX 2050 so it coexists with FashionCLIP +
+  # SegFormer + MPNet without OOM. On an 8GB+ card, switch model to
+  # Salesforce/blip-image-captioning-large for slightly richer captions.
+  # Set enabled: false to run the fully CLIP-only (no-captioner) path.
+  enabled: true
+  model: Salesforce/blip-image-captioning-base
+  max_new_tokens: 40
+  batch_size: 8
+
+sentence_encoder:
+  # Embeds captions and queries into a shared semantic space (handles style inference,
+  # e.g. "casual weekend outfit for a city walk" with no explicit garment words).
+  # If you hit CUDA OOM on the 4GB card, set device: auto -> cpu just here (this model is
+  # tiny and fast on CPU) to free ~400MB VRAM for the vision models.
+  model: sentence-transformers/all-mpnet-base-v2
+  embed_dim: 768
+  batch_size: 64
+
+segmenter:
+  # SegFormer fine-tuned on clothes parsing (ATR, 18 classes). Gives per-pixel garment
+  # labels -> per-garment region crops. This is what enables COMPOSITIONAL binding
+  # ("red tie AND white shirt" vs "white tie AND red shirt").
+  enabled: true
+  model: mattmdjaga/segformer_b2_clothes
+  min_region_area_frac: 0.005   # ignore garment blobs smaller than 0.5% of the image
+  max_regions_per_image: 6
+
+reranker:
+  # OPTIONAL text<->text cross-encoder over captions. Off by default: it mostly re-scores
+  # signal we already capture. Turn on to A/B its effect on ordering.
+  enabled: false
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  rerank_top_n: 30

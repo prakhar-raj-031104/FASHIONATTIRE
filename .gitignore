@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Data & heavy artifacts — NEVER commit (images, model weights, indexes)
+# (gitignore does NOT support inline comments; keep patterns on their own line)
+# ---------------------------------------------------------------------------
+# raw images, annotations, HF model cache (multi-GB)
+data/
+# FAISS indexes + SQLite metadata (regenerable)
+indexes/
+# logs, result grids (regenerable)
+outputs/
+# any downloaded checkpoints
+models/
+
+*.faiss
+*.db
+*.sqlite
+*.sqlite-journal
+*.npy
+*.pt
+*.bin
+*.onnx
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ---------------------------------------------------------------------------
+# HuggingFace / model caches
+# ---------------------------------------------------------------------------
+.cache/
+hf_cache/
+.huggingface/
+
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+*.swp
