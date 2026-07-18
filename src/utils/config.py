@@ -32,7 +32,6 @@ class Config:
     device: str = "cpu"
     root: Path = REPO_ROOT
 
-    # --- path helpers -----------------------------------------------------
     def path(self, *keys: str) -> Path:
         """Resolve a nested path key (e.g. ``cfg.path("index", "faiss_global")``)."""
         node: Any = self.paths

@@ -13,6 +13,7 @@ _CONFIGURED: set[str] = set()
 
 
 def get_logger(name: str, log_dir: Optional[Path] = None, level: int = logging.INFO) -> logging.Logger:
+    """Return a configured logger; also writes to outputs/logs/<name>.log when log_dir is given."""
     logger = logging.getLogger(name)
     if name in _CONFIGURED:
         return logger

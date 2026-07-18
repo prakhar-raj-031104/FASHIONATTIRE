@@ -20,7 +20,10 @@ from ..utils.schema import ImageRecord, RegionRecord
 
 
 class MetadataDB:
+    """SQLite store for image metadata, structured attributes and garment regions."""
+
     def __init__(self, db_path: Path | str):
+        """Open (creating if needed) the database and ensure the schema exists."""
         self.db_path = str(db_path)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         # check_same_thread=False so the connection can be shared across threads (the web
@@ -57,8 +60,8 @@ class MetadataDB:
         )
         self.conn.commit()
 
-    # --- writes --------------------------------------------------------- #
     def insert_image(self, rec: ImageRecord) -> None:
+        """Upsert one image row plus all of its garment region rows."""
         cur = self.conn.cursor()
         cur.execute(
             "INSERT OR REPLACE INTO images(image_id, image_path, caption, attributes) "
@@ -76,10 +79,11 @@ class MetadataDB:
             )
 
     def commit(self) -> None:
+        """Commit the current transaction (the indexer commits once per chunk)."""
         self.conn.commit()
 
-    # --- reads ---------------------------------------------------------- #
     def count_images(self) -> int:
+        """Number of indexed images."""
         return self.conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
 
     def _row_to_region(self, row: sqlite3.Row) -> RegionRecord:
@@ -133,12 +137,14 @@ class MetadataDB:
         return recs
 
     def get_regions(self, image_id: int) -> List[RegionRecord]:
+        """All garment regions belonging to one image."""
         rows = self.conn.execute(
             "SELECT * FROM regions WHERE image_id=?", (image_id,)
         ).fetchall()
         return [self._row_to_region(r) for r in rows]
 
     def region_to_image(self, region_ids: List[int]) -> Dict[int, int]:
+        """Map region ids back to their parent image ids (region index -> image)."""
         if not region_ids:
             return {}
         qs = ",".join("?" * len(region_ids))
@@ -151,10 +157,12 @@ class MetadataDB:
         }
 
     def iter_images(self) -> Iterator[ImageRecord]:
+        """Stream every ImageRecord in id order (memory-friendly full scan)."""
         for row in self.conn.execute("SELECT image_id FROM images ORDER BY image_id"):
             rec = self.get_image(row["image_id"])
             if rec:
                 yield rec
 
     def close(self) -> None:
+        """Close the underlying SQLite connection."""
         self.conn.close()

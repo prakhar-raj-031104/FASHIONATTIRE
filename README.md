@@ -1,195 +1,288 @@
 # Multimodal Fashion & Context Retrieval
 
-An intelligent image search engine that retrieves fashion images from natural-language
-descriptions — understanding **what** someone wears, **where** they are, and the **vibe**
-of the outfit. Built to beat a vanilla CLIP baseline on the fashion-specific failure
-modes the assignment calls out (compositionality and fine-grained attributes).
+Natural-language image search over **3,200 fashion images** that understands **what** someone
+wears, **where** they are, and the **vibe** of the outfit.
 
 ```
-"A red tie and a white shirt in a formal setting."   → the right images, not the color-swapped trap
-"Casual weekend outfit for a city walk."             → inferred (hoodie/jeans/street) with no garment words in the query
+"A red tie and a white shirt in a formal setting."   → binds each colour to the right garment
+"Casual weekend outfit for a city walk."             → infers hoodie/jeans/street with no garment words
 ```
+
+**Measured headline:** on a colour-swap test, vanilla CLIP returns **75.0%** identical results
+for a query and its colour-swapped twin; this system returns **52.5%** — a **30% relative gain**
+in compositional separation, winning on **8/12** pairs.
+
+📄 Full design write-up: [`docs/Glance_ML_Assignment_Writeup.pdf`](docs/Glance_ML_Assignment_Writeup.pdf) · source: [`docs/WRITEUP.md`](docs/WRITEUP.md)
 
 ---
 
-## TL;DR — why this is better than "CLIP + FAISS"
+## 1. Why not just CLIP + FAISS?
 
-Vanilla CLIP embeds the whole image into **one** vector, so it behaves like a bag of
-concepts: it cannot tell *"red shirt, blue pants"* from *"blue shirt, red pants"*, and it
-under-weights fine-grained fashion attributes. This system adds **structure** on top of a
-fashion-domain encoder:
+CLIP is trained contrastively over a **single pooled embedding per image**. Pooling is order-
+and position-agnostic: the vector records *"there is red, white, a tie, a shirt"* but **not
+which attribute binds to which garment**. So `"red tie + white shirt"` and `"white tie + red
+shirt"` land at nearly the same point — literally the same bag of concepts.
 
-| Signal | Model | Failure mode it fixes | Eval query |
-|---|---|---|---|
-| **Global similarity** | FashionCLIP | generic semantics / scene | all |
-| **Caption similarity** | BLIP → MPNet | style/vibe *inference* (no garment words) | "casual weekend city walk" |
-| **Attribute match** | FashionCLIP zero-shot tagger | explicit multi-attribute grounding | "yellow raincoat", "business office" |
-| **Region binding** | SegFormer + FashionCLIP | **compositional color↔garment binding** | "red tie **and** white shirt" |
-
-The four signals are min-max normalized and fused with configurable weights; inactive
-signals (e.g. no color-garment binding in the query) are dropped and their weight
-redistributed. See [`docs/WRITEUP.md`](docs/WRITEUP.md) for the full rationale, trade-offs,
-and future work — that document is the source for the submission PDF.
+This is **architectural, not capacity** — a bigger encoder cannot recover information destroyed
+at pooling. **The fix must add structure below the image level**, which is what per-garment
+region decomposition does here.
 
 ---
 
-## Architecture
+## 2. The flow
+
+### Part A — Indexing (`src/indexing/`)
 
 ```
-                         INDEXING (Part A)                         RETRIEVAL (Part B)
-   raw image                                            query text
-      │                                                     │
-      ├─ FashionCLIP  ─────────► global.faiss   ◄──ANN───   ├─ FashionCLIP (text)  → q_clip
-      │                                                     ├─ MPNet (text)        → q_sent
-      ├─ BLIP caption ─► MPNet ─► caption.faiss  ◄──ANN───  │
-      │                                                     ▼
-      ├─ CLIP zero-shot tagger ─► attributes ──► SQLite   candidate pool (union of ANN hits)
-      │                                                     │
-      └─ SegFormer regions ─► crops ─► FashionCLIP          ▼
-                          ├─ region.faiss                HybridScorer
-                          └─ colors/type ──► SQLite   (global + caption + attribute + region)
-                                                            │
-                                                            ▼   (optional cross-encoder rerank)
-                                                        Top-K images
+                          ┌─ FashionCLIP ──────────────► global.faiss      (3,200 vectors)
+                          │
+                          ├─ BLIP caption ─► MPNet ────► caption.faiss     (3,200 vectors)
+   raw image ─────────────┤
+                          ├─ CLIP zero-shot tagger ────► SQLite.attributes (environment /
+                          │                                                 style / garment / colour)
+                          │
+                          └─ SegFormer garment regions ─► crop each ─► FashionCLIP ─► region.faiss
+                                                                    └─ colour + type ─► SQLite.regions
+                                                                                        (9,851 regions)
 ```
 
-**Two-stage retrieval** (ANN recall → feature-rich rerank) is the same pattern used at
-web scale, so the ranking logic is identical whether the corpus is 1k or 1M images — only
-the FAISS index type changes (flat → IVF/HNSW).
+### Part B — Retrieval (`src/retrieval/`)
+
+```
+  query text
+      │
+      ├─ QueryParser ──► QuerySpec { attributes, (colour,garment) bindings }
+      ├─ FashionCLIP ──► q_clip ─┐
+      └─ MPNet ────────► q_sent ─┤
+                                 ▼
+              STAGE 1 · RECALL (ANN, sub-linear)
+              union of top-400 from global.faiss + caption.faiss
+                                 │
+                                 ▼
+              STAGE 2 · RERANK (only the candidate pool)
+              ┌────────────────────────────────────────────┐
+              │ 0.40 · global_clip      semantics + scene   │
+              │ 0.20 · caption_sim      style / vibe        │
+              │ 0.20 · attribute_match  multi-attribute     │
+              │ 0.20 · region_binding   colour↔garment      │
+              └────────────────────────────────────────────┘
+                                 │
+                                 ▼
+                            Top-k images
+```
+
+Each signal is **min-max normalised across the candidate pool** before weighting (CLIP cosines
+sit in ~0.15–0.35 while attribute/region scores span [0,1], so a raw sum would drown CLIP).
+Signals that don't apply to a query are **dropped and their weight redistributed**.
+
+| Signal | Failure mode it fixes | Query it rescues |
+|---|---|---|
+| `global_clip` | overall semantics, scene | all |
+| `caption_sim` | style inference with **no garment words** | 4 |
+| `attribute_match` | grounded multi-attribute filtering | 1, 2 |
+| `region_binding` | **compositional colour↔garment binding** | 5 |
 
 ---
 
-## Project layout — *logic is separated from data*
+## 3. Repository layout
 
 ```
-configs/            # ALL tunable knobs (models, paths, weights). No hardcoding in code.
-  models.yaml         swap any checkpoint in one line
-  paths.yaml          every filesystem location
-  retrieval.yaml      scoring weights + search params
+configs/            every tunable knob — no constant is hardcoded in logic
+  models.yaml         model checkpoints, device, dtype, batch sizes
+  paths.yaml          all filesystem locations
+  retrieval.yaml      scoring weights, candidate pool, binding aggregation
 src/
-  utils/            config loader (+device resolution), logger, typed schema (data contracts)
-  attributes/       controlled vocab, CLIP zero-shot tagger, rule-based query parser
-  models/           thin wrappers: FashionCLIP, BLIP, MPNet, SegFormer, cross-encoder
+  utils/            config + device resolution, logger, typed schema
+  models/           the ONLY code importing HuggingFace: FashionCLIP · BLIP · MPNet ·
+                    SegFormer · CrossEncoder
+  attributes/       controlled vocabulary · zero-shot tagger · query parser
   database/         SQLite metadata store + FAISS vector store (3 indexes)
-  indexing/         dataset loader (dataset-agnostic) + indexer orchestration
-  pipelines/        model factories (single config→object mapping)
-  retrieval/        HybridScorer (4 signals + fusion) + Retriever (2-stage)
-  evaluation/       the 5 official queries + contact-sheet + precision@k
+  indexing/         ▶ PART A: dataset loader (dataset-agnostic) + indexer
+  retrieval/        ▶ PART B: HybridScorer (4 signals) + Retriever (2-stage)
+  pipelines/        model factories (single config → object mapping)
+  evaluation/       official queries · contact sheet · compositionality swap test
 tests/              pure-logic unit tests (query parsing + compositional binding)
-scripts/            optional hybrid dataset builder (Fashionpedia + COCO)
-main.py             CLI: index / query / evaluate
-docs/WRITEUP.md     the submission write-up (approaches, chosen arch, future work)
+webapp/             optional Flask demo portal
+scripts/            dataset builder · PDF generator
+main.py             CLI: index / query / evaluate / compositional
 ```
 
-Vectors live in FAISS; **metadata lives in SQLite** — never in filenames. Every pipeline
-stage passes typed `ImageRecord` / `RegionRecord` / `QuerySpec` objects.
+**Logic is separated from data:** vectors live in FAISS, metadata in SQLite — *never in
+filenames*. Swapping FashionCLIP → SigLIP is a one-line YAML change. The loader assumes only
+*"a folder of images"*, so Fashionpedia / DeepFashion / COCO / phone photos all work unchanged.
 
 ---
 
-## Setup
+## 4. Setup
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# GPU strongly recommended. The code auto-detects CUDA; on CPU it forces float32 and the
-# BLIP/SegFormer stages get slow (turn them off in configs/models.yaml if CPU-only).
 ```
 
-> **GPU note:** if `nvidia-smi` fails ("couldn't communicate with the NVIDIA driver"),
-> the driver isn't loaded — fix that first (reboot / reinstall driver), otherwise indexing
-> falls back to CPU.
-
-### 1. Get a dataset (≥ 500–1000 images) into `data/raw/`
-
-Any folder of images works — the loader is dataset-agnostic. For the best match to the
-evaluation axes, build a **hybrid** (fine-grained garments + diverse scenes):
+Put images in `data/raw/` (any subfolder structure; symlinks are followed):
 
 ```bash
-pip install datasets
+ln -s /path/to/your/images data/raw/mydata        # or:
 python scripts/prepare_dataset.py --fashionpedia 700 --coco-person 300
 ```
 
-…or just drop your own images into `data/raw/` (subfolders are fine).
-
-### 2. Build the index (Part A)
-
-```bash
-python main.py index
-# → indexes/global.faiss, caption.faiss, region.faiss, metadata.sqlite
-```
-
-### 3. Query (Part B)
-
-```bash
-python main.py query "a red tie and a white shirt in a formal setting" -k 10
-python main.py query "someone wearing a blue shirt sitting on a park bench"
-```
-
-Each result prints its fused score **and the per-signal breakdown**, so you can see *why*
-it ranked where it did.
-
-### 3b. (Optional) Web portal — search visually + inspect scoring
-
-```bash
-pip install flask          # already in requirements.txt
-python webapp/app.py       # then open http://localhost:5000
-```
-
-- **Search** page: describe a scene, get matching images. Each search shows **how the query
-  was parsed** (attributes + color→garment bindings) and every result's **4-signal score
-  breakdown**, so the retrieval logic is transparent.
-- **Evaluation** page: runs the 5 official queries live with an explanation of exactly how
-  scoring works — a self-serve way to verify system behaviour.
-
-The portal is a thin Flask layer over the same `Retriever` the CLI uses — the browser shows
-exactly what the ML system returns.
-
-### 4. Evaluate the 5 official queries
-
-```bash
-python main.py evaluate            # writes outputs/results/eval.json + eval.html
-# open outputs/results/eval.html for a visual contact sheet
-# optional precision@k: pass --labels labels.json  ({ "<query>": [relevant_image_ids] })
-```
-
-### 5. Measure compositionality vs vanilla CLIP
-
-```bash
-python main.py compositional       # colour-swap test → outputs/results/compositional.json
-```
-
-Objective, **label-free** proof that the system beats plain CLIP at colour↔garment binding:
-for a query and its colour-swapped twin ("green top + yellow skirt" ↔ "yellow top + green
-skirt"), a bag-of-words model returns the *same* images (overlap ≈ 1.0) while a compositional
-one returns *different* ones. Measured over 12 pairs on the same index:
-
-| | vanilla CLIP | this system |
-|---|---|---|
-| mean overlap@10 | 0.750 | **0.525** (**−30%**, better on 8/12 pairs) |
+GPU is auto-detected (`device: auto`); on CPU it falls back to float32. Defaults are tuned for
+a 4 GB card — on 8 GB+ raise the batch sizes and switch to `blip-image-captioning-large`.
 
 ---
 
-## Design choices worth defending (short version)
-
-- **FashionCLIP over generic CLIP/OpenCLIP** — domain encoder trained on ~800k fashion
-  pairs; better garment/color/style grounding for essentially free.
-- **CLIP zero-shot tagging over an LLM attribute extractor** — grounds attributes in
-  *pixels*, not in a caption an LLM might hallucinate; deterministic, reproducible, cheap.
-- **SegFormer region decomposition** — the one component that genuinely fixes
-  compositional binding; dataset-agnostic (no reliance on Fashionpedia masks).
-- **BLIP-large over BLIP-2** — captions are generated once, offline; BLIP-2's marginal
-  quality isn't worth ~7× the memory.
-- **Cross-encoder rerank left OFF by default** — over captions it mostly re-scores signal
-  we already have; wired in so its effect can be measured honestly, not assumed.
-
-Full reasoning, alternatives, and their trade-offs are in [`docs/WRITEUP.md`](docs/WRITEUP.md).
-
-## Tests
+## 5. Usage
 
 ```bash
-pip install pytest && pytest -q      # or run the two files directly
+python main.py index                                       # Part A — build the index
+python main.py query "someone in a blue shirt on a park bench" -k 10   # Part B — search
+python main.py evaluate                                    # 5 official queries → eval.html
+python main.py compositional                               # colour-swap test vs vanilla CLIP
+python webapp/app.py                                       # visual portal @ localhost:5000
+pytest -q                                                  # unit tests
 ```
 
-`tests/test_scorer.py` is the headline check: two images identical to whole-image CLIP
-(red-tie/white-shirt vs the swap) are correctly disambiguated by the region-binding
-signal.
+Every result prints its **per-signal breakdown**, so any ranking decision is auditable:
+
+```
+ 1. [0.942] .../0d2c93...jpg
+     caption: a little girl in a yellow raincoat and red tights
+     signals: global_clip=1.00 caption_sim=1.00 attribute_match=1.00 region_binding=0.77
+```
+
+### Web portal
+
+`python webapp/app.py` → **Search** shows how your query was parsed (attributes + bindings) plus
+each result's signal bars; **Evaluation** explains the scoring and runs all 5 official queries live.
+
+---
+
+## 6. Results & metrics
+
+### 6.1 The five official evaluation queries
+
+| # | Query | Score | Top result | |
+|---|---|---|---|---|
+| 1 | *A person in a bright yellow raincoat.* | **0.942** | "a little girl in a **yellow raincoat** and red tights" | ⭐ |
+| 2 | *Professional business attire inside a modern office.* | **0.916** | "a woman in a black suit and **white shirt**" | ✅ |
+| 3 | *Someone wearing a blue shirt sitting on a park bench.* | **0.906** | "a young girl sitting on a **bench in the park**" | ✅ |
+| 4 | *Casual weekend outfit for a city walk.* | **0.896** | "on the **sidewalk** in a white shirt and **jeans**" | ⭐ |
+| 5 | *A red tie and a white shirt in a formal setting.* | **0.702** | "a man in a vest and red pants" | ⚠️ corpus-limited |
+
+Reproduce: `python main.py evaluate` → `outputs/results/eval.json` + `eval.html`.
+
+### 6.2 Compositionality — colour-swap test (objective, label-free)
+
+For a query and its colour-swapped twin, a bag-of-words model returns the **same** images
+(overlap ≈ 1.0); a compositional one returns **different** ones. Both systems run on the **same
+index** — only the ranking differs. 12 pairs × k=10 = **120 slots**.
+
+| Colour-swapped pair | vanilla CLIP | this system | |
+|---|---|---|---|
+| green top / yellow skirt | 1.00 | **0.10** | ✅ |
+| purple top / black trousers | 0.70 | **0.20** | ✅ |
+| yellow top / blue skirt | 0.80 | **0.30** | ✅ |
+| green jacket / white shirt | 0.80 | **0.40** | ✅ |
+| brown coat / black trousers | 0.90 | **0.50** | ✅ |
+| red skirt / white blouse | 0.70 | **0.60** | ✅ |
+| blue shirt / red trousers | 0.90 | **0.70** | ✅ |
+| black dress / white jacket | 0.90 | **0.80** | ✅ |
+| black jacket / white trousers | 0.70 | 0.70 | = |
+| pink blouse / black skirt | 0.70 | 0.70 | = |
+| white blouse / blue jeans | 0.40 | 0.50 | ✗ |
+| red tie / white shirt | 0.50 | 0.80 | ✗ |
+| **MEAN overlap@10** | **0.750** | **0.525** | **−30.0%** |
+
+**8 wins · 2 ties · 2 losses.** All 8 wins are pairs where CLIP is most blind (0.70–1.00); both
+losses are pairs CLIP *already* separated (0.40, 0.50) — the mechanism helps most exactly where
+the baseline fails hardest. Reproduce: `python main.py compositional`.
+
+### 6.3 Latency
+
+| | |
+|---|---|
+| Mean over the 5 official queries | **318 ms** |
+| Warm query | **~150 ms** |
+| Indexing throughput | 3,200 images in **~11 min** (~0.2 s/image, 4 GB RTX 2050) |
+
+### 6.4 Index statistics
+
+| Artefact | Size | Contents |
+|---|---|---|
+| `global.faiss` | 6.6 MB | 3,200 × 512-d image vectors |
+| `caption.faiss` | 9.9 MB | 3,200 × 768-d caption vectors |
+| `region.faiss` | 20.3 MB | 9,851 × 512-d garment-region vectors |
+| `metadata.sqlite` | 17.4 MB | attributes, captions, region boxes/colours/types |
+
+### 6.5 Corpus composition (zero-shot tagged)
+
+**Environments** — the assignment's required axes are all present:
+
+| indoor studio | urban street | home interior | park | office | shopping mall |
+|---|---|---|---|---|---|
+| 1,177 | 765 | 391 | 292 | 198 | 142 |
+
+**Garment regions** (top types of 9,851):
+
+| shoe | dress | bag | blouse | skirt | leggings | trousers | coat | jeans | blazer |
+|---|---|---|---|---|---|---|---|---|---|
+| 2,808 | 1,411 | 664 | 613 | 594 | 540 | 384 | 335 | 260 | 221 |
+
+### 6.6 Tests
+
+`6/6 passing` — query parsing for all 5 official queries, plus the headline compositional test:
+two images identical to whole-image CLIP (red-tie/white-shirt vs the swap) are correctly
+disambiguated by the region-binding signal.
+
+---
+
+## 7. Design decisions
+
+| Decision | Rationale |
+|---|---|
+| **FashionCLIP** over generic CLIP | fine-tuned on ~800k fashion pairs — better garment/colour/fabric grounding for ~zero cost |
+| **CLIP zero-shot tagging** over an LLM attribute extractor | grounds attributes in *pixels*, not in a caption an LLM might hallucinate; deterministic and reproducible |
+| **SegFormer region decomposition** | the one component that genuinely fixes colour↔garment binding; dataset-agnostic |
+| **BLIP-base** over BLIP-2 | captions are generated once, offline; BLIP-2's marginal gain isn't worth ~7× the memory |
+| **Rule-based query parser** over an LLM | the schema is small and fixed; instant, reproducible, unit-testable — and a pluggable upgrade point |
+| **FAISS + SQLite** | the brief says favour ML logic over storage engineering — so effort went into ranking |
+| **Cross-encoder rerank OFF by default** | it mostly re-scores signal we already have; wired in so its uplift can be *measured*, not assumed |
+| **Binding aggregation `0.5·mean + 0.5·min`** | a multi-binding query is a conjunction — half-satisfaction must not score like full, but plain `min` is brittle to one missed segmentation |
+
+---
+
+## 8. Scalability to 1M images
+
+The retrieval **logic is size-invariant**; only the index type changes.
+
+- **Recall:** `IndexFlatIP` → `IndexIVFFlat`/HNSW is a one-line change in
+  `VectorStore.build(index_type="ivf")` — ids and the `search()` contract are identical.
+- **Rerank:** cost is **independent of corpus size** — only the fixed 400-candidate pool is scored.
+- **Memory:** 1M × 512-d fp16 ≈ 1 GB global (regions ~2.3×); IVF-PQ compresses 8–32×.
+- **Metadata:** structured attributes enable **SQL pre-filtering** (`environment=office AND
+  EXISTS a tie region`) to shrink the ANN space *before* search.
+- **Indexing:** embarrassingly parallel — shard across workers and merge FAISS shards.
+
+---
+
+## 9. Known limitations
+
+| Limitation | Cause | Fix |
+|---|---|---|
+| Query 5 weak | only **44 ties** in 3,200 images — Fashionpedia is womenswear/runway-heavy | **dataset composition**, not a ranker change |
+| Office scenes thin | ~198 office-like images | blend in a scene-rich dataset (loader is dataset-agnostic) |
+| Multi-person binding | SegFormer parses clothing, not *people* | person detector; bind within one individual |
+| Uncalibrated confidences | softmax is relative, not probabilistic | per-axis Platt/temperature calibration |
+| Hand-set weights | no labelled set within the time budget | learn the fusion (LambdaMART) once labels exist |
+
+Full analysis, approaches considered, and future work (locations/weather + precision) are in the
+[write-up PDF](docs/Glance_ML_Assignment_Writeup.pdf).
+
+---
+
+## 10. Stack
+
+FashionCLIP (`patrickjohncyh/fashion-clip`) · BLIP (`Salesforce/blip-image-captioning-base`) ·
+MPNet (`all-mpnet-base-v2`) · SegFormer (`mattmdjaga/segformer_b2_clothes`) · FAISS · SQLite ·
+Flask. Hardware: single 4 GB NVIDIA RTX 2050.

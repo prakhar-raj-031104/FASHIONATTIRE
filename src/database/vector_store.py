@@ -27,8 +27,8 @@ class FaissIndex:
             index = self._faiss.IndexIDMap2(self._faiss.IndexFlatIP(dim))
         self.index = index
 
-    # --- build / update ------------------------------------------------- #
     def add(self, ids: np.ndarray, vectors: np.ndarray) -> None:
+        """Add vectors with explicit int64 ids (ids are ours, not insertion order)."""
         if len(ids) == 0:
             return
         vectors = np.ascontiguousarray(vectors.astype(np.float32))
@@ -63,9 +63,9 @@ class FaissIndex:
 
     @property
     def ntotal(self) -> int:
+        """Number of vectors currently stored."""
         return self.index.ntotal
 
-    # --- persistence ---------------------------------------------------- #
     def save(self, path: Path | str) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._faiss.write_index(self.index, str(path))

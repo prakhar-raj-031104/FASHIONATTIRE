@@ -19,6 +19,7 @@ from ..utils.config import Config
 
 
 def build_clip(cfg: Config) -> FashionCLIP:
+    """Build the FashionCLIP encoder (used by both the indexer and the retriever)."""
     m = cfg.models["fashion_clip"]
     return FashionCLIP(
         model_name=m["model"], device=cfg.device, dtype=cfg.models.get("dtype", "float32"),
@@ -27,6 +28,7 @@ def build_clip(cfg: Config) -> FashionCLIP:
 
 
 def build_captioner(cfg: Config):
+    """Build the BLIP captioner, or None when captioning is disabled in config."""
     m = cfg.models["captioner"]
     if not m.get("enabled", True):
         return None
@@ -37,6 +39,7 @@ def build_captioner(cfg: Config):
 
 
 def build_sentence_encoder(cfg: Config) -> SentenceEncoder:
+    """Build the sentence encoder used for caption and query embeddings."""
     m = cfg.models["sentence_encoder"]
     return SentenceEncoder(
         model_name=m["model"], device=cfg.device, batch_size=m.get("batch_size", 128)
@@ -44,6 +47,7 @@ def build_sentence_encoder(cfg: Config) -> SentenceEncoder:
 
 
 def build_segmenter(cfg: Config):
+    """Build the garment segmenter, or None when region decomposition is disabled."""
     m = cfg.models["segmenter"]
     if not m.get("enabled", True):
         return None
@@ -55,6 +59,7 @@ def build_segmenter(cfg: Config):
 
 
 def build_reranker(cfg: Config):
+    """Build the optional cross-encoder reranker, or None when disabled (the default)."""
     m = cfg.models["reranker"]
     if not m.get("enabled", False):
         return None
@@ -62,4 +67,5 @@ def build_reranker(cfg: Config):
 
 
 def build_tagger(clip: FashionCLIP) -> ZeroShotTagger:
+    """Build the zero-shot attribute tagger on top of an existing CLIP encoder."""
     return ZeroShotTagger(clip)

@@ -32,7 +32,16 @@ from .dataset_loader import discover_images, load_image
 
 
 class Indexer:
+    """Builds the searchable index from a folder of raw images (Part A)."""
+
     def __init__(self, cfg: Config, chunk_size: int = 16):
+        """Load every index-time model.
+
+        Args:
+            cfg: merged configuration.
+            chunk_size: images held in memory per chunk. Region crops are batched across
+                the whole chunk before hitting FashionCLIP to keep the GPU busy.
+        """
         self.cfg = cfg
         self.chunk_size = chunk_size
         self.log = get_logger("indexer", cfg.path("outputs", "logs"))
@@ -48,7 +57,6 @@ class Indexer:
             self.captioner is not None, self.segmenter is not None,
         )
 
-    # ------------------------------------------------------------------ #
     def _process_regions(self, image_id: int, pil, seg_regions,
                          region_id_start: int) -> List[RegionRecord]:
         """Crop, embed, and tag every garment region of one image."""
@@ -76,8 +84,13 @@ class Indexer:
             ))
         return records
 
-    # ------------------------------------------------------------------ #
     def run(self, image_dir=None) -> None:
+        """Index every image under ``image_dir``, writing FAISS indexes + the SQLite DB.
+
+        Args:
+            image_dir: image root (defaults to paths.yaml data.raw_images). Symlinked
+                directories are followed, so the dataset can live outside the repo.
+        """
         cfg = self.cfg
         cfg.ensure_dirs()
         image_dir = image_dir or cfg.path("data", "raw_images")
@@ -105,7 +118,6 @@ class Indexer:
                 cap_embs = (self.sentence.encode(captions)
                             if self.captioner else np.zeros((len(pils), 0)))
 
-                # image-level records + FAISS payloads
                 region_ids_all: List[int] = []
                 region_vecs_all: List[np.ndarray] = []
                 for j, (iid, path) in enumerate(batch):
@@ -124,7 +136,6 @@ class Indexer:
                             region_vecs_all.append(r.embedding)
                     db.insert_image(rec)
 
-                # add vectors to FAISS
                 global_index.add(np.array(ids, dtype=np.int64), clip_embs)
                 if caption_index is not None:
                     caption_index.add(np.array(ids, dtype=np.int64), cap_embs)
@@ -135,7 +146,6 @@ class Indexer:
 
             self.log.info("Indexed %d images, %d regions.", db.count_images(), region_counter)
 
-            # persist
             global_index.save(cfg.path("index", "faiss_global"))
             if caption_index is not None:
                 caption_index.save(cfg.path("index", "faiss_caption"))

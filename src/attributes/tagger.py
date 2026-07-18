@@ -30,28 +30,26 @@ def _softmax(x: np.ndarray, temp: float = 0.01) -> np.ndarray:
 
 
 class ZeroShotTagger:
+    """Classifies images and garment crops against the controlled vocabulary, zero-shot."""
+
     def __init__(self, clip, temperature: float = 0.01):
         """``clip`` is a FashionCLIP wrapper. ``temperature`` mirrors CLIP's logit scale
         (~0.01 -> multiply cosine sims by 100 before softmax)."""
         self.clip = clip
         self.temp = temperature
 
-        # Image-level axis banks: axis -> (values, embedding matrix V x D).
         self.image_banks: Dict[str, Tuple[List[str], np.ndarray]] = {}
         for axis, values in vocab.IMAGE_AXES.items():
             templates = vocab.IMAGE_PROMPT_TEMPLATES[axis]
             self.image_banks[axis] = (values, self._build_bank(values, templates))
 
-        # Region color bank (shared across all region types).
         self.color_bank = self._build_bank(vocab.COLORS, vocab.REGION_COLOR_TEMPLATES)
 
-        # Region type banks keyed by SegFormer label (fine-grained typing of each crop).
         self.region_type_banks: Dict[str, Tuple[List[str], np.ndarray]] = {}
         for seg_label, cands in vocab.REGION_TYPE_CANDIDATES.items():
             self.region_type_banks[seg_label] = (cands, self._build_bank(
                 cands, vocab.REGION_TYPE_TEMPLATES))
 
-    # ------------------------------------------------------------------ #
     def _build_bank(self, values: List[str], templates: List[str]) -> np.ndarray:
         """Prompt-ensembled text embedding per value: mean over templates, renormalized."""
         vecs = []
@@ -70,7 +68,6 @@ class ZeroShotTagger:
         probs = _softmax(sims, temp)
         return {val: float(p) for val, p in zip(values, probs)}
 
-    # ------------------------------------------------------------------ #
     def tag_image(self, image_embedding: np.ndarray) -> Dict[str, Dict[str, float]]:
         """Structured image-level attributes: axis -> {value: confidence}."""
         out: Dict[str, Dict[str, float]] = {}

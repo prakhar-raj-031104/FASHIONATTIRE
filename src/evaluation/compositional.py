@@ -95,7 +95,6 @@ def run_swap_test(retriever, k: int = 10) -> Dict:
         "summary": {
             "vanilla_clip_mean_overlap": clip_mean,
             "hybrid_mean_overlap": hyb_mean,
-            # Positive = the hybrid separates swapped queries better than vanilla CLIP.
             "absolute_reduction": clip_mean - hyb_mean,
             "relative_reduction_pct": (
                 100.0 * (clip_mean - hyb_mean) / clip_mean if clip_mean > 0 else 0.0

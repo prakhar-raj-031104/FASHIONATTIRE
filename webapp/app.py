@@ -66,9 +66,9 @@ def _run(query: str, k: int):
     }
 
 
-# --------------------------------------------------------------------------- #
 @app.route("/api/search")
 def api_search():
+    """JSON search endpoint: returns the parsed query plus ranked results."""
     q = (request.args.get("q") or "").strip()
     k = min(max(int(request.args.get("k", 12)), 1), 48)
     if not q:
@@ -78,6 +78,7 @@ def api_search():
 
 @app.route("/api/evaluate")
 def api_evaluate():
+    """JSON endpoint running the five official queries live."""
     out = []
     for item in EVAL_QUERIES:
         row = _run(item["query"], 6)
@@ -88,6 +89,7 @@ def api_evaluate():
 
 @app.route("/img/<int:image_id>")
 def img(image_id: int):
+    """Serve the underlying image file for an indexed image id."""
     rec = _retriever.db.get_image(image_id, with_regions=False)
     if rec is None or not Path(rec.image_path).exists():
         abort(404)
@@ -96,17 +98,17 @@ def img(image_id: int):
 
 @app.route("/")
 def index():
+    """Search page."""
     return render_template_string(PAGE, active="search", body=SEARCH_BODY)
 
 
 @app.route("/evaluate")
 def evaluate_page():
+    """Evaluation page: how scoring works + the five official queries run live."""
     return render_template_string(PAGE, active="evaluate", body=EVAL_BODY)
 
 
-# --------------------------------------------------------------------------- #
 # Templates (inline to keep the demo self-contained).
-# --------------------------------------------------------------------------- #
 STYLE = """
 :root{--bg:#0d1117;--card:#161b22;--bd:#21262d;--fg:#e6edf3;--mut:#8b949e;--acc:#2f81f7;
       --g:#3fb950;--y:#d29922;--r:#f85149;--p:#a371f7}

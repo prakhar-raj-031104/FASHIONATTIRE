@@ -18,6 +18,7 @@ from src.utils.logger import get_logger
 
 
 def cmd_index(args) -> int:
+    """PART A: build the search index from a folder of images."""
     from src.indexing import Indexer
 
     cfg = load_config()
@@ -28,6 +29,7 @@ def cmd_index(args) -> int:
 
 
 def cmd_query(args) -> int:
+    """PART B: retrieve and print the top-k images for a natural-language query."""
     from src.retrieval import Retriever
 
     cfg = load_config()
@@ -49,6 +51,7 @@ def cmd_query(args) -> int:
 
 
 def cmd_evaluate(args) -> int:
+    """Run the five official evaluation queries and write the report + contact sheet."""
     from src.evaluation import run_evaluation
 
     cfg = load_config()
@@ -97,6 +100,7 @@ def cmd_compositional(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI: index / query / evaluate / compositional."""
     p = argparse.ArgumentParser(description="Fashion & context retrieval CLI")
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -124,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """CLI entry point."""
     args = build_parser().parse_args()
     return args.func(args)
 

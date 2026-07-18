@@ -26,7 +26,14 @@ from .scorer import HybridScorer, ScoredImage
 
 
 class Retriever:
+    """End-to-end query -> top-k search over a previously built index."""
+
     def __init__(self, cfg: Config):
+        """Load the query-side models and open the FAISS indexes + metadata DB.
+
+        Only the lightweight query-side models are built (CLIP text tower, sentence
+        encoder, optional reranker) — BLIP and SegFormer are index-time only.
+        """
         self.cfg = cfg
         self.log = get_logger("retriever", cfg.path("outputs", "logs"))
 
@@ -49,7 +56,6 @@ class Retriever:
         self.pool = cfg.retrieval["search"].get("candidate_pool", 200)
         self.default_k = cfg.retrieval["search"].get("top_k", 10)
 
-    # ------------------------------------------------------------------ #
     def _candidate_ids(self, q_clip: np.ndarray, q_sent: np.ndarray) -> List[int]:
         ids: set[int] = set()
         _, gids = self.store.global_index.search(q_clip, self.pool)
@@ -61,6 +67,16 @@ class Retriever:
 
     def retrieve(self, query: str, k: Optional[int] = None,
                  explain: bool = False) -> List[ScoredImage]:
+        """Return the top-k images for a natural-language query.
+
+        Args:
+            query: e.g. "a red tie and a white shirt in a formal setting".
+            k: number of results (defaults to configs/retrieval.yaml search.top_k).
+            explain: log how the query was parsed (attributes + bindings).
+
+        Returns:
+            Ranked ScoredImage list, each carrying its per-signal score breakdown.
+        """
         k = k or self.default_k
         spec = self.parser.parse(query)
         if explain:
@@ -105,4 +121,5 @@ class Retriever:
         return head + scored[top_n:]
 
     def close(self) -> None:
+        """Close the metadata DB connection."""
         self.db.close()

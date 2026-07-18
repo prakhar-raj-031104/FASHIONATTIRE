@@ -74,6 +74,7 @@ def _write_html(results: List[Dict], out_path: Path) -> None:
 
 def run_evaluation(cfg: Config, k: int = 10,
                    labels_path: Optional[str] = None) -> Dict:
+    """Run the five official queries, writing eval.json + a visual eval.html contact sheet."""
     log = get_logger("evaluation", cfg.path("outputs", "logs"))
     retriever = Retriever(cfg)
 

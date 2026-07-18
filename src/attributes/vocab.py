@@ -14,10 +14,8 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-# ---------------------------------------------------------------------------
 # Attribute axes. Each axis -> list of vocabulary values that CLIP will score
 # an image (or region crop) against via zero-shot classification.
-# ---------------------------------------------------------------------------
 ENVIRONMENT: List[str] = [
     "office", "urban street", "park", "home interior", "restaurant",
     "shopping mall", "gym", "beach", "indoor studio", "nature outdoors",
@@ -50,7 +48,6 @@ COLORS: List[str] = [
     "pink", "brown", "black", "white", "gray", "beige",
 ]
 
-# All garment-type words used for query binding + region typing (union of the above).
 GARMENT_TYPES: List[str] = sorted(set(
     UPPER_GARMENT + LOWER_GARMENT + OUTERWEAR + ACCESSORIES
 ))
@@ -65,11 +62,9 @@ IMAGE_AXES: Dict[str, List[str]] = {
     "colors": COLORS,
 }
 
-# ---------------------------------------------------------------------------
 # SegFormer (mattmdjaga/segformer_b2_clothes, ATR 18-class) label id -> our
 # normalized garment vocabulary. Non-garment classes (skin/hair/face/legs/arms/
 # background) map to None and are ignored during region extraction.
-# ---------------------------------------------------------------------------
 SEGFORMER_ID2LABEL: Dict[int, str] = {
     0: "background", 1: "hat", 2: "hair", 3: "sunglasses", 4: "upper-clothes",
     5: "skirt", 6: "pants", 7: "dress", 8: "belt", 9: "left-shoe", 10: "right-shoe",
@@ -110,10 +105,8 @@ REGION_TYPE_CANDIDATES: Dict[str, List[str]] = {
     "right-shoe": ["shoe"],
 }
 
-# ---------------------------------------------------------------------------
 # Prompt templates for CLIP zero-shot classification (prompt ensembling: average
 # the text embeddings over several templates to reduce prompt sensitivity).
-# ---------------------------------------------------------------------------
 IMAGE_PROMPT_TEMPLATES: Dict[str, List[str]] = {
     "environment": [
         "a photo of a person in {}",
@@ -147,7 +140,6 @@ IMAGE_PROMPT_TEMPLATES: Dict[str, List[str]] = {
     ],
 }
 
-# Prompt templates used on region crops.
 REGION_TYPE_TEMPLATES: List[str] = [
     "a photo of a {}",
     "a {} garment",

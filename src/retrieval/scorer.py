@@ -31,6 +31,13 @@ from ..utils.schema import ImageRecord, QuerySpec
 
 @dataclass
 class ScoredImage:
+    """One ranked result.
+
+    ``signals`` holds the pool-normalized per-signal contributions actually used in the
+    fusion, and ``raw_signals`` the pre-normalization values — together they make every
+    ranking decision auditable (the CLI and web portal both display them).
+    """
+
     image_id: int
     image_path: str
     score: float
@@ -47,12 +54,14 @@ def _minmax(x: np.ndarray) -> np.ndarray:
 
 
 class HybridScorer:
+    """Ranks candidates by fusing the four complementary signals (see module docstring)."""
+
     def __init__(self, retrieval_cfg: dict):
+        """Args: retrieval_cfg — the parsed ``configs/retrieval.yaml`` (weights + params)."""
         self.weights = dict(retrieval_cfg["weights"])
         self.attr_cfg = retrieval_cfg.get("attribute_match", {})
         self.region_cfg = retrieval_cfg.get("region_binding", {})
 
-    # --- individual signals -------------------------------------------- #
     def _attribute_scores(self, q: QuerySpec,
                           candidates: List[ImageRecord]) -> np.ndarray:
         """Attribute-match score per candidate, with PER-ATTRIBUTE normalization.
@@ -136,7 +145,6 @@ class HybridScorer:
             return mean_s
         return 0.5 * mean_s + 0.5 * min_s
 
-    # --- fusion --------------------------------------------------------- #
     def score(
         self,
         query: QuerySpec,
@@ -146,6 +154,18 @@ class HybridScorer:
         global_vecs: np.ndarray,
         caption_vecs: Optional[np.ndarray],
     ) -> List[ScoredImage]:
+        """Score and rank a candidate pool, best first.
+
+        Args:
+            query: parsed QuerySpec (attributes + colour-garment bindings).
+            q_clip: query text in FashionCLIP space.
+            q_sent: query text in sentence-encoder space (None if captions are disabled).
+            candidates: ImageRecords fetched from SQLite (with their regions).
+            global_vecs / caption_vecs: stored vectors for those candidates, row-aligned.
+
+        Returns:
+            ScoredImage list sorted by fused score descending.
+        """
         n = len(candidates)
         if n == 0:
             return []
@@ -172,7 +192,6 @@ class HybridScorer:
             "region_binding": query.has_bindings(),
         }
 
-        # normalize active signals and renormalize weights over them
         norm: Dict[str, np.ndarray] = {}
         active_weight_sum = 0.0
         for k, is_on in active.items():

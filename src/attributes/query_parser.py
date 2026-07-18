@@ -17,7 +17,6 @@ from typing import Dict, List, Optional
 from ..utils.schema import GarmentBinding, QuerySpec
 from . import vocab
 
-# --- synonym / alias maps (query surface form -> canonical vocab value) ---------------
 COLOR_ALIASES: Dict[str, str] = {
     "grey": "gray", "navy blue": "navy", "off-white": "white", "cream": "beige",
     "tan": "beige", "maroon": "red", "crimson": "red", "scarlet": "red",
@@ -74,8 +73,10 @@ def _garment_axis(gtype: str) -> str:
 
 
 class QueryParser:
+    """Decomposes a natural-language query into structured attributes and bindings."""
+
     def __init__(self):
-        # Longest-first so multi-word phrases match before their sub-words.
+        """Precompute the term lists, longest-first so multi-word phrases match first."""
         self._garment_terms = sorted(
             set(vocab.GARMENT_TYPES) | set(GARMENT_ALIASES),
             key=len, reverse=True,
@@ -84,7 +85,6 @@ class QueryParser:
             set(vocab.COLORS) | set(COLOR_ALIASES), key=len, reverse=True
         )
 
-    # ------------------------------------------------------------------ #
     def _canon_color(self, tok: str) -> Optional[str]:
         tok = tok.lower()
         if tok in vocab.COLORS:
@@ -110,6 +110,17 @@ class QueryParser:
         return spans
 
     def parse(self, query: str) -> QuerySpec:
+        """Parse a query into a QuerySpec.
+
+        Example:
+            "a red tie and a white shirt in a formal setting" ->
+              attributes = {style: [formal], accessories: [tie],
+                            upper_garment: [shirt], colors: [red, white]}
+              bindings   = [(red, tie), (white, shirt)]
+
+        Colours bind to the nearest FOLLOWING garment within a short window, so
+        intervening modifiers ("bright yellow raincoat") do not break the binding.
+        """
         text = query.lower().strip()
         words = text.split()
 
@@ -120,7 +131,6 @@ class QueryParser:
             if value not in attributes[axis]:
                 attributes[axis].append(value)
 
-        # --- environment & style via keyword scan --------------------------
         for kw, canon in ENVIRONMENT_KEYWORDS.items():
             if re.search(r"\b" + re.escape(kw) + r"\b", text):
                 add("environment", canon)
@@ -128,7 +138,6 @@ class QueryParser:
             if re.search(r"\b" + re.escape(kw) + r"\b", text):
                 add("style", canon)
 
-        # --- locate garment and color mentions -----------------------------
         garment_hits = self._find_spans(text, self._garment_terms)
         color_hits = self._find_spans(text, self._color_terms)
 
@@ -144,13 +153,11 @@ class QueryParser:
             if canon:
                 color_by_idx[idx] = canon
 
-        # Record standalone attribute presence.
         for gtype in garment_by_idx.values():
             add(_garment_axis(gtype), gtype)
         for c in color_by_idx.values():
             add("colors", c)
 
-        # --- bind each color to the nearest following garment --------------
         bindings: List[GarmentBinding] = []
         garment_idxs = sorted(garment_by_idx.keys())
         used_garments = set()

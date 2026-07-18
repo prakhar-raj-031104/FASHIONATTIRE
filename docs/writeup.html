@@ -1,218 +1,161 @@
 <!doctype html><html><head><meta charset='utf-8'><title>Glance ML Assignment — Multimodal Fashion &amp; Context Retrieval</title><style>
-@page { size: A4; margin: 16mm 14mm; }
+/* Tuned so the full write-up — every deliverable retained — fits 5 A4 pages. */
+@page { size: A4; margin: 13mm 12mm; }
 * { box-sizing: border-box; }
 body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-       font-size: 10.6pt; line-height: 1.5; color: #1b1f24; margin: 0; }
-h1 { font-size: 21pt; margin: 0 0 2px; color: #0b1f3a; letter-spacing: -0.3px; }
-h2 { font-size: 14.5pt; margin: 20px 0 7px; padding-bottom: 4px;
-     border-bottom: 2px solid #d7dde5; color: #0b1f3a; page-break-after: avoid; }
-h3 { font-size: 12pt; margin: 14px 0 5px; color: #14355f; page-break-after: avoid; }
-h4 { font-size: 10.8pt; margin: 11px 0 4px; color: #14355f; }
-p, li { margin: 5px 0; }
-ul, ol { padding-left: 20px; margin: 5px 0; }
-code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9.1pt;
-       background: #f2f4f7; padding: 1px 5px; border-radius: 4px; color: #8a2f6b; }
-pre { background: #0f1620; color: #e6edf3; padding: 10px 13px; border-radius: 7px;
-      overflow-x: auto; font-size: 8.7pt; line-height: 1.42; page-break-inside: avoid; }
+       font-size: 10.4pt; line-height: 1.42; color: #1b1f24; margin: 0; }
+h1 { font-size: 19pt; margin: 0 0 2px; color: #0b1f3a; letter-spacing: -0.3px; }
+h2 { font-size: 13.2pt; margin: 14px 0 5px; padding-bottom: 3px;
+     border-bottom: 1.5px solid #d7dde5; color: #0b1f3a; page-break-after: avoid; }
+h3 { font-size: 11.3pt; margin: 10px 0 4px; color: #14355f; page-break-after: avoid; }
+h4 { font-size: 10.6pt; margin: 8px 0 3px; color: #14355f; }
+p, li { margin: 4px 0; }
+ul, ol { padding-left: 19px; margin: 4px 0; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt;
+       background: #f2f4f7; padding: 1px 4px; border-radius: 3px; color: #8a2f6b; }
+pre { background: #0f1620; color: #e6edf3; padding: 9px 12px; border-radius: 6px;
+      overflow-x: auto; font-size: 8.7pt; line-height: 1.4; margin: 7px 0;
+      page-break-inside: avoid; }
 pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
-table { border-collapse: collapse; width: 100%; margin: 9px 0; font-size: 9.3pt;
+table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 9.1pt;
         page-break-inside: avoid; }
-th, td { border: 1px solid #d7dde5; padding: 5px 8px; text-align: left; vertical-align: top; }
+th, td { border: 1px solid #d7dde5; padding: 3.5px 6px; text-align: left; vertical-align: top; }
 th { background: #eef2f7; font-weight: 700; }
-blockquote { border-left: 3px solid #2f81f7; margin: 9px 0; padding: 4px 13px;
+blockquote { border-left: 2px solid #2f81f7; margin: 5px 0; padding: 2px 9px;
              background: #f5f9ff; color: #33404f; }
-hr { border: none; border-top: 1px solid #d7dde5; margin: 16px 0; }
+hr { border: none; border-top: 1px solid #d7dde5; margin: 7px 0; }
 strong { color: #0b1f3a; }
 a { color: #1a63c4; text-decoration: none; }
 </style></head><body><h1 id="multimodal-fashion-context-retrieval">Multimodal Fashion &amp; Context Retrieval</h1>
-<p><strong>Glance ML Internship Assignment — Design Write-up</strong>
-<strong>Codebase:</strong> https://github.com/prakhar-raj-031104/FASHIONATTIRE</p>
-<hr />
-<h2 id="0-executive-summary">0. Executive summary</h2>
-<p>I built a natural-language image search engine over <strong>3,200 fashion images</strong> that reasons
-jointly about <strong>what</strong> a person wears, <strong>where</strong> they are, and the <strong>vibe</strong> of the outfit.</p>
-<p>The core thesis: <em>a single global CLIP embedding is structurally incapable of compositional
-retrieval, so the fix must add structure — not a bigger encoder.</em> The system therefore pairs
-a <strong>fashion-domain encoder (FashionCLIP)</strong> with three complementary signals, the most
-important being <strong>per-garment region decomposition</strong>, which binds each colour to the
-specific garment it modifies.</p>
+<p><strong>Glance ML Internship Assignment</strong> · <strong>Codebase:</strong> https://github.com/prakhar-raj-031104/FASHIONATTIRE</p>
+<p>A natural-language image search engine over <strong>3,200 fashion images</strong> that reasons jointly about <strong>what</strong> a person wears, <strong>where</strong> they are, and the outfit's <strong>vibe</strong>.</p>
+<p><strong>Core thesis:</strong> a single global CLIP embedding is <em>structurally</em> incapable of compositional retrieval, so the fix must add <strong>structure</strong>, not a bigger encoder.</p>
 <table>
 <thead>
 <tr>
-<th></th>
-<th></th>
+<th>Corpus</th>
+<th>Latency</th>
+<th>Key measured result</th>
+<th>Training</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Corpus</strong></td>
-<td>3,200 images · 9,851 garment regions · FAISS (3 indexes) + SQLite</td>
-</tr>
-<tr>
-<td><strong>Latency</strong></td>
-<td>~150 ms per query warm (318 ms mean incl. cold start), 2-stage ANN recall → rerank</td>
-</tr>
-<tr>
-<td><strong>Key result</strong></td>
-<td>On a 12-pair colour-swap test, vanilla CLIP returns <strong>75.0%</strong> identical results for a query and its colour-swapped twin; this system returns <strong>52.5%</strong> — a <strong>30% relative gain</strong> in compositional separation, winning on <strong>8/12</strong> pairs (§4)</td>
-</tr>
-<tr>
-<td><strong>Training</strong></td>
-<td><strong>None.</strong> Every model is used zero-shot, off-the-shelf</td>
+<td>3,200 images · 9,851 garment regions · FAISS ×3 + SQLite</td>
+<td>~150 ms warm</td>
+<td>Colour-swap overlap@10: vanilla CLIP <strong>0.750</strong> → this system <strong>0.525</strong> (<strong>−30%</strong>, wins 8/12 pairs)</td>
+<td><strong>None</strong> — fully zero-shot</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="1-problem-framing-why-this-is-hard">1. Problem framing: why this is hard</h2>
-<p>The five evaluation queries are deliberately chosen to break a naïve retriever. Decomposing
-them shows three distinct capabilities are required:</p>
+<h2 id="1-why-this-is-hard">1. Why this is hard</h2>
 <table>
 <thead>
 <tr>
 <th>#</th>
 <th>Query</th>
-<th>Capability stressed</th>
-<th>Why plain CLIP struggles</th>
+<th>Capability</th>
+<th>CLIP's problem</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
-<td><em>bright yellow raincoat</em></td>
+<td>bright yellow raincoat</td>
 <td>colour + garment</td>
-<td>fine-grained fashion vocabulary is sparse in generic CLIP training</td>
+<td>sparse fine-grained fashion vocabulary</td>
 </tr>
 <tr>
 <td>2</td>
-<td><em>business attire inside a modern office</em></td>
+<td>business attire in a modern office</td>
 <td>style + scene</td>
-<td>needs scene grounding, not just garment</td>
+<td>needs scene grounding</td>
 </tr>
 <tr>
 <td>3</td>
-<td><em>blue shirt sitting on a park bench</em></td>
-<td>colour + garment + scene + pose</td>
+<td>blue shirt on a park bench</td>
+<td>colour + garment + scene</td>
 <td>multi-constraint conjunction</td>
 </tr>
 <tr>
 <td>4</td>
-<td><em>casual weekend outfit for a city walk</em></td>
+<td>casual weekend outfit for a city walk</td>
 <td><strong>style inference</strong></td>
-<td><strong>no garment words at all</strong> — must infer hoodie/jeans/street from "vibe"</td>
+<td><strong>no garment words at all</strong></td>
 </tr>
 <tr>
 <td>5</td>
-<td><em>a red tie </em><em>and</em><em> a white shirt</em></td>
+<td>a red tie <strong>and</strong> a white shirt</td>
 <td><strong>compositional binding</strong></td>
-<td><strong>the canonical CLIP failure</strong></td>
+<td><strong>canonical CLIP failure</strong></td>
 </tr>
 </tbody>
 </table>
-<h3 id="the-actual-mechanism-of-clips-failure-not-just-its-bad-at-composition">The actual mechanism of CLIP's failure (not just "it's bad at composition")</h3>
-<p>CLIP is trained with a contrastive objective over a <strong>single pooled embedding per image</strong>.
-That pooling is order- and position-agnostic: the image vector encodes <em>"there is red, there
-is white, there is a tie, there is a shirt"</em> but <strong>not which attribute binds to which
-object</strong>. Consequently <code>"red tie + white shirt"</code> and <code>"white tie + red shirt"</code> map to nearly
-the same point in embedding space — they are literally the same bag of concepts.</p>
-<p>This is an <strong>architectural</strong> limitation, not a capacity one. Scaling the encoder or
-fine-tuning does not remove it, because the information is destroyed at the pooling step.
-<strong>Therefore the fix must reintroduce structure below the image level</strong> — which is exactly
-what region decomposition does.</p>
+<p><strong>The actual failure mechanism.</strong> CLIP is trained contrastively over a <strong>single pooled embedding per image</strong>. Pooling is order- and position-agnostic: the vector encodes <em>"there is red, white, a tie, a shirt"</em> but <strong>not which attribute binds to which object</strong>. So <code>"red tie + white shirt"</code> and <code>"white tie + red shirt"</code> map to nearly the same point — literally the same bag of concepts. This is <strong>architectural, not capacity</strong>: scaling or fine-tuning the encoder cannot recover information destroyed at pooling. <strong>Therefore the fix must reintroduce structure below the image level.</strong></p>
 <hr />
-<h2 id="2-approaches-considered-and-their-trade-offs-deliverable-1">2. Approaches considered, and their trade-offs <em>(Deliverable 1)</em></h2>
+<h2 id="2-approaches-and-trade-offs-deliverable-1">2. Approaches and trade-offs <em>(Deliverable 1)</em></h2>
 <table>
 <thead>
 <tr>
-<th>#</th>
 <th>Approach</th>
 <th>Strengths</th>
 <th>Weaknesses</th>
-<th>When it's the right call</th>
+<th>Best when</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>A</strong></td>
-<td>Vanilla CLIP/OpenCLIP + FAISS</td>
-<td>trivial, strong zero-shot, one model</td>
-<td><strong>bag-of-words</strong>: no colour↔garment binding; weak fine-grained fashion terms</td>
-<td>a quick baseline, or when queries are single-concept</td>
+<td><strong>A. Vanilla CLIP + FAISS</strong></td>
+<td>trivial, strong zero-shot</td>
+<td><strong>bag-of-words</strong>: no binding; weak fashion terms</td>
+<td>quick baseline, single-concept queries</td>
 </tr>
 <tr>
-<td><strong>B</strong></td>
-<td><strong>FashionCLIP</strong> + FAISS</td>
-<td>big domain gain on garments/fabric/colour for ~zero cost</td>
-<td>same architectural binding limitation</td>
-<td>any fashion task — adopt as the <em>floor</em>, not the solution</td>
+<td><strong>B. FashionCLIP + FAISS</strong></td>
+<td>large domain gain on garment/colour/fabric for ~zero cost</td>
+<td>same architectural binding limit</td>
+<td>any fashion task — the <em>floor</em>, not the solution</td>
 </tr>
 <tr>
-<td><strong>C</strong></td>
-<td>Caption → LLM attribute extraction → hybrid</td>
-<td>interpretable; good scene/style; handles query 4</td>
-<td>error compounds (caption hallucination → wrong attribute); non-deterministic; extra GPU-heavy LLM</td>
-<td>when captions are reliable and you need open-vocabulary attributes</td>
+<td><strong>C. Caption → LLM attributes</strong></td>
+<td>interpretable; good scene/style</td>
+<td>errors compound (hallucinated caption → wrong attribute); non-deterministic; extra GPU</td>
+<td>open-vocabulary attributes with reliable captions</td>
 </tr>
 <tr>
-<td><strong>D</strong></td>
-<td><strong>CLIP zero-shot tagging</strong> vs controlled vocabulary</td>
-<td>grounded in <em>pixels</em> not text; deterministic; cheap; vocabulary is editable</td>
-<td>image-level only → still no binding; needs a curated vocabulary</td>
+<td><strong>D. CLIP zero-shot tagging</strong></td>
+<td>grounded in <em>pixels</em>; deterministic; cheap; editable vocabulary</td>
+<td>image-level only → still no binding</td>
 <td>structured, filterable attributes without training</td>
 </tr>
 <tr>
-<td><strong>E</strong></td>
-<td><strong>Region / part decomposition</strong></td>
+<td><strong>E. Region decomposition</strong></td>
 <td>genuinely <strong>solves binding</strong>; dataset-agnostic</td>
-<td>extra segmentation cost at index time; fails on tiny/occluded garments</td>
-<td>whenever compositionality is graded — as it is here</td>
+<td>segmentation cost; fails on tiny/occluded items</td>
+<td>whenever compositionality is graded</td>
 </tr>
 <tr>
-<td><strong>F</strong></td>
-<td>Object detector + scene graph + VQA per attribute, or a vector-DB service (Pinecone) + microservices</td>
+<td><strong>F. Detector + scene graph + VQA, or Pinecone/microservices</strong></td>
 <td>maximal expressiveness</td>
-<td>large latency/complexity, more failure surface, <strong>no measured retrieval gain at this scale</strong></td>
-<td>very large production systems, not a 4-hour assignment</td>
+<td>large complexity, more failure surface, <strong>no measured gain at this scale</strong></td>
+<td>large production systems</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Decision.</strong> Adopt <strong>B + D + E</strong>, with a caption signal from <strong>C</strong> (BLIP only, <em>no</em> LLM
-extraction — grounding attributes in pixels beats grounding them in possibly-hallucinated
-text). Reject <strong>F</strong> as over-engineering: the assignment explicitly says to favour ML logic
-over indexing engineering, so I used FAISS + SQLite and spent the effort on ranking.</p>
+<p><strong>Decision: B + D + E</strong>, plus a caption signal from C (BLIP only, <strong>no LLM extraction</strong> — grounding attributes in pixels beats grounding them in possibly-hallucinated text). <strong>F rejected</strong> as over-engineering: the brief says favour ML logic over indexing engineering, so I used FAISS + SQLite and spent the effort on ranking.</p>
 <hr />
 <h2 id="3-chosen-architecture-deliverable-2">3. Chosen architecture <em>(Deliverable 2)</em></h2>
-<h3 id="31-indexing-pipeline-part-a-srcindexing">3.1 Indexing pipeline (Part A) — <code>src/indexing/</code></h3>
-<p>Per image, four artefacts are produced:</p>
-<ol>
-<li><strong>FashionCLIP global embedding</strong> → <code>global.faiss</code> — semantic/scene baseline.</li>
-<li><strong>BLIP caption → MPNet sentence embedding</strong> → <code>caption.faiss</code> — a <em>text-native</em> semantic
-   view that captures vibe/context.</li>
-<li><strong>CLIP zero-shot attributes</strong> → SQLite — for each axis (environment / style / garment /
-   colour) every vocabulary value is embedded through several <strong>prompt templates and
-   averaged</strong> (prompt ensembling reduces sensitivity to phrasing), then the image is scored
-   against that bank and softmax-normalised.</li>
-<li><strong>SegFormer garment regions</strong> → each garment is cropped, embedded by FashionCLIP, and
-   independently tagged with its own <strong>colour and fine-grained type</strong> → <code>region.faiss</code> +
-   SQLite.</li>
-</ol>
-<p>Artefact (4) is the crux: it preserves <em>which colour sits on which garment</em>.</p>
-<h3 id="32-retrieval-pipeline-part-b-srcretrieval">3.2 Retrieval pipeline (Part B) — <code>src/retrieval/</code></h3>
-<p><strong>Stage 1 — recall (sub-linear).</strong> The query is embedded by FashionCLIP (text tower) and
-MPNet; the union of top-N from <code>global.faiss</code> and <code>caption.faiss</code> forms a candidate pool
-(default 400).</p>
-<p><strong>Stage 2 — precision rerank.</strong> Only that small pool is scored with the expensive,
-feature-rich signals. This ANN-recall → rerank split is the standard web-scale pattern, and
-is why the logic is unchanged at 1M images (§7).</p>
-<h3 id="33-the-ranking-function-and-why-each-term-exists">3.3 The ranking function — and why each term exists</h3>
-<pre><code>score = w₁·global_clip + w₂·caption_sim + w₃·attribute_match + w₄·region_binding
-         (0.40)           (0.20)            (0.20)              (0.20)
+<p><strong>Part A — Indexer (<code>src/indexing/</code>).</strong> Per image: (1) <strong>FashionCLIP</strong> global embedding → <code>global.faiss</code>; (2) <strong>BLIP caption → MPNet</strong> sentence embedding → <code>caption.faiss</code>; (3) <strong>CLIP zero-shot attributes</strong> (environment/style/garment/colour, each value embedded through several <strong>prompt templates and averaged</strong>) → SQLite; (4) <strong>SegFormer garment regions</strong>, each cropped, embedded, and tagged with <strong>its own colour and type</strong> → <code>region.faiss</code> + SQLite. Artefact (4) is the crux: it preserves <em>which colour sits on which garment</em>.</p>
+<p><strong>Part B — Retriever (<code>src/retrieval/</code>).</strong> <em>Stage 1 (recall):</em> query embedded by FashionCLIP + MPNet; union of top-N from the global and caption indexes forms a 400-candidate pool. <em>Stage 2 (rerank):</em> only that pool is scored with expensive signals. This ANN→rerank split is why the logic is unchanged at 1M images (§6).</p>
+<pre><code>score = 0.40·global_clip + 0.20·caption_sim + 0.20·attribute_match + 0.20·region_binding
 </code></pre>
 <table>
 <thead>
 <tr>
 <th>Signal</th>
-<th>What it fixes</th>
-<th>Query it rescues</th>
+<th>Fixes</th>
+<th>Rescues</th>
 </tr>
 </thead>
 <tbody>
@@ -223,12 +166,12 @@ is why the logic is unchanged at 1M images (§7).</p>
 </tr>
 <tr>
 <td><code>caption_sim</code></td>
-<td><strong>style/vibe inference</strong> — the caption <em>"a man in a hoodie walking down a street"</em> matches <em>"casual weekend outfit for a city walk"</em> with <strong>zero shared garment words</strong></td>
+<td><strong>style inference</strong> — caption <em>"a man in a hoodie walking down a street"</em> matches <em>"casual weekend outfit for a city walk"</em> with <strong>zero shared garment words</strong></td>
 <td><strong>4</strong></td>
 </tr>
 <tr>
 <td><code>attribute_match</code></td>
-<td>explicit, grounded multi-attribute filtering</td>
+<td>grounded multi-attribute filtering</td>
 <td><strong>1, 2</strong></td>
 </tr>
 <tr>
@@ -238,165 +181,106 @@ is why the logic is unchanged at 1M images (§7).</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Query parsing.</strong> A deterministic rule + synonym + adjacency parser converts the query into
-a <code>QuerySpec</code>: structured attributes plus <code>(colour, garment)</code> <strong>bindings</strong> (<code>"a red tie and a
-white shirt"</code> → <code>[(red, tie), (white, shirt)]</code>). I chose rules over an LLM because the schema
-is small and fixed, it is instant and reproducible, and it is trivially unit-testable — while
-remaining a drop-in point for an LLM parser later (§8).</p>
-<p><strong>Region-binding scoring.</strong> A binding scores high only if <strong>some single region</strong> matches
-<em>both</em> the garment type <em>and</em> the colour. Multiple bindings are combined as
-<code>0.5·mean + 0.5·min</code>: a query like <em>"red tie </em><em>AND</em><em> white shirt"</em> is a <strong>conjunction</strong>, so
-satisfying only half of it must not score like satisfying all of it (plain <code>mean</code> is too
-lenient); but plain <code>min</code> is brittle — one missed segmentation would zero an otherwise
-perfect image. The hybrid keeps partial credit while rewarding full satisfaction.</p>
-<p><strong>Two subtleties that materially affected quality</strong> (both found by measurement, not intuition):</p>
-<ol>
-<li><strong>Per-signal normalisation is mandatory.</strong> FashionCLIP cosines occupy a narrow band
-   (~0.15–0.35) while attribute/region scores span [0, 1]. A raw weighted sum would silently
-   drown the CLIP signal. Each signal is therefore <strong>min-max normalised across the candidate
-   pool</strong> before weighting, so every term competes on equal footing. Signals that don't apply
-   to a query (e.g. no binding present) are dropped and their weight <strong>redistributed</strong>.</li>
-<li><strong>Bound attributes must be excluded from <code>attribute_match</code>.</strong> That signal is
-   <em>order-agnostic</em>: both <code>"red tie + white shirt"</code> and <code>"white tie + red shirt"</code> reduce to
-   the colour set <code>{red, white}</code>. Counting those colours again pulls colour-swapped queries
-   back <strong>together</strong>, diluting the order-sensitive <code>region_binding</code>. Excluding bound
-   attributes improved measured compositional separation from <strong>15.8% → 23.7%</strong> (§4).</li>
-</ol>
+<p><strong>Query parsing.</strong> A deterministic rule + synonym + adjacency parser yields a <code>QuerySpec</code>: structured attributes plus <code>(colour, garment)</code> <strong>bindings</strong> (<code>"a red tie and a white shirt"</code> → <code>[(red,tie), (white,shirt)]</code>). Rules over an LLM because the schema is small and fixed, it is instant, reproducible and unit-testable — while remaining a drop-in point for an LLM parser (§7.2).</p>
+<p><strong>Binding score.</strong> A binding scores high only if <strong>one single region</strong> matches <em>both</em> garment type <em>and</em> colour. Multiple bindings combine as <code>0.5·mean + 0.5·min</code>: the query is a <strong>conjunction</strong>, so half-satisfaction must not score like full (plain <code>mean</code> is too lenient), but plain <code>min</code> is brittle — one missed segmentation would zero a perfect image.</p>
+<p><strong>Two subtleties, both found by measurement:</strong>
+1. <strong>Per-signal normalisation is mandatory.</strong> CLIP cosines occupy ~0.15–0.35 while attribute/region scores span [0,1]; a raw weighted sum would drown the CLIP signal. Each signal is min-max normalised <strong>across the candidate pool</strong> before weighting; signals that don't apply are dropped and their weight <strong>redistributed</strong>.
+2. <strong>Bound attributes must be excluded from <code>attribute_match</code>.</strong> That signal is <em>order-agnostic</em>: both swap variants reduce to <code>{red, white}</code>, so counting them again pulls swapped queries back <strong>together</strong>, diluting the order-sensitive binding. Excluding them improved measured separation <strong>15.8% → 23.7%</strong>.</p>
 <hr />
-<h2 id="4-empirical-results-does-it-actually-work">4. Empirical results — <em>does it actually work?</em></h2>
-<h3 id="41-compositionality-an-objective-label-free-measurement">4.1 Compositionality: an objective, label-free measurement</h3>
-<p>Asserting "we beat CLIP" is cheap. I measure it. For a query <strong>Q</strong> and its <strong>colour-swapped
-twin Q′</strong> (identical words, colours exchanged), a bag-of-words retriever cannot tell them
-apart, so <code>top-k(Q)</code> and <code>top-k(Q′)</code> are nearly the <strong>same set</strong>. A compositional retriever
-pulls <strong>different</strong> images. So <strong>overlap@k is an inverse proxy for compositional sensitivity</strong>
-— and it needs no human labels.</p>
-<p>Both systems run over the <strong>same index</strong>; only the ranking differs. <strong>12 pairs × k=10 = 120
-slots</strong> — deliberately sized so the mean is not dominated by single-image noise (at 5 pairs,
-one image moves the mean by 0.02, which is not a measurable difference).</p>
+<h2 id="4-measured-results">4. Measured results</h2>
+<h3 id="41-compositionality-objective-and-label-free">4.1 Compositionality — objective and label-free</h3>
+<p>For a query <strong>Q</strong> and its <strong>colour-swapped twin Q′</strong>, a bag-of-words retriever cannot tell them apart → <code>top-k</code> sets nearly <strong>identical</strong>; a compositional one returns <strong>different</strong> images. So <strong>overlap@k is an inverse proxy for compositional sensitivity, needing no human labels.</strong> Both systems run on the <strong>same index</strong>; only ranking differs. <strong>12 pairs × k=10 = 120 slots</strong>, sized so one image (0.008) cannot dominate the mean.</p>
 <table>
 <thead>
 <tr>
-<th>Colour-swapped pair</th>
-<th>vanilla CLIP</th>
-<th><strong>this system</strong></th>
+<th>Pair</th>
+<th>CLIP</th>
+<th>Ours</th>
 <th></th>
+<th>Pair</th>
+<th>CLIP</th>
+<th>Ours</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>green top / yellow skirt</td>
-<td>1.00 <em>(completely blind)</em></td>
-<td><strong>0.10</strong></td>
-<td>✅</td>
+<td>1.00</td>
+<td><strong>0.10</strong> ✅</td>
+<td></td>
+<td>blue shirt / red trousers</td>
+<td>0.90</td>
+<td><strong>0.70</strong> ✅</td>
 </tr>
 <tr>
 <td>purple top / black trousers</td>
 <td>0.70</td>
-<td><strong>0.20</strong></td>
-<td>✅</td>
+<td><strong>0.20</strong> ✅</td>
+<td></td>
+<td>black dress / white jacket</td>
+<td>0.90</td>
+<td><strong>0.80</strong> ✅</td>
 </tr>
 <tr>
 <td>yellow top / blue skirt</td>
 <td>0.80</td>
-<td><strong>0.30</strong></td>
-<td>✅</td>
+<td><strong>0.30</strong> ✅</td>
+<td></td>
+<td>black jacket / white trousers</td>
+<td>0.70</td>
+<td>0.70 =</td>
 </tr>
 <tr>
 <td>green jacket / white shirt</td>
 <td>0.80</td>
-<td><strong>0.40</strong></td>
-<td>✅</td>
+<td><strong>0.40</strong> ✅</td>
+<td></td>
+<td>pink blouse / black skirt</td>
+<td>0.70</td>
+<td>0.70 =</td>
 </tr>
 <tr>
 <td>brown coat / black trousers</td>
 <td>0.90</td>
-<td><strong>0.50</strong></td>
-<td>✅</td>
+<td><strong>0.50</strong> ✅</td>
+<td></td>
+<td>white blouse / blue jeans</td>
+<td>0.40</td>
+<td>0.50 ✗</td>
 </tr>
 <tr>
 <td>red skirt / white blouse</td>
 <td>0.70</td>
-<td><strong>0.60</strong></td>
-<td>✅</td>
-</tr>
-<tr>
-<td>blue shirt / red trousers</td>
-<td>0.90</td>
-<td><strong>0.70</strong></td>
-<td>✅</td>
-</tr>
-<tr>
-<td>black dress / white jacket</td>
-<td>0.90</td>
-<td><strong>0.80</strong></td>
-<td>✅</td>
-</tr>
-<tr>
-<td>black jacket / white trousers</td>
-<td>0.70</td>
-<td>0.70</td>
-<td>=</td>
-</tr>
-<tr>
-<td>pink blouse / black skirt</td>
-<td>0.70</td>
-<td>0.70</td>
-<td>=</td>
-</tr>
-<tr>
-<td>white blouse / blue jeans</td>
-<td>0.40</td>
-<td>0.50</td>
-<td>✗</td>
-</tr>
-<tr>
+<td><strong>0.60</strong> ✅</td>
+<td></td>
 <td>red tie / white shirt</td>
 <td>0.50</td>
-<td>0.80</td>
-<td>✗</td>
+<td>0.80 ✗</td>
 </tr>
 <tr>
-<td><strong>Mean overlap@10</strong></td>
+<td><strong>MEAN</strong></td>
 <td><strong>0.750</strong></td>
 <td><strong>0.525</strong></td>
+<td></td>
+<td><strong>relative reduction</strong></td>
+<td></td>
 <td><strong>−30.0%</strong></td>
 </tr>
 </tbody>
 </table>
-<p><strong>Result: a 30% relative reduction in swap overlap, winning on 8/12 pairs (2 ties, 2
-losses).</strong> The clearest case is <em>green top / yellow skirt</em>, where CLIP returns an
-<strong>identical</strong> top-10 for both phrasings (overlap 1.00) — the textbook failure — while this
-system separates them almost completely (0.10).</p>
-<p><strong>Where the gains concentrate — an informative pattern.</strong> The eight wins are exactly the
-pairs where vanilla CLIP is most blind (overlap 0.70–1.00), and the two losses are pairs CLIP
-<em>already</em> separated well (0.40, 0.50). In other words <strong>the region-binding mechanism
-contributes most precisely where the baseline fails hardest</strong>, and adds noise where the
-baseline was already correct. That asymmetry is the desired behaviour for a corrective
-signal, and it suggests a natural refinement: make the binding weight <em>adaptive</em> to how
-confidently the dense signals already discriminate.</p>
+<p><strong>8/12 wins, 2 ties, 2 losses.</strong> Clearest case: <em>green top / yellow skirt</em>, where CLIP returns an <strong>identical</strong> top-10 for both phrasings (1.00) — the textbook failure — while this system separates them almost completely (0.10).</p>
+<p><strong>Where gains concentrate.</strong> All 8 wins are pairs where CLIP is most blind (0.70–1.00); both losses are pairs CLIP <em>already</em> separated (0.40, 0.50). <strong>The mechanism contributes most precisely where the baseline fails hardest</strong> — the desired behaviour for a corrective signal, and it suggests making the binding weight <em>adaptive</em> to how confidently the dense signals already discriminate.</p>
 <h3 id="42-honest-negative-result-diagnosed">4.2 Honest negative result, diagnosed</h3>
-<p>The <em>red tie / white shirt</em> pair — the assignment's query 5 — <strong>did not improve</strong>. Rather
-than hide it, I traced the cause in data. The index originally held only <strong>18 tie regions
-across 3,200 images</strong>, because two filters removed small garments (an area threshold of 0.5%
-of image area, plus a cap of 6 regions/image applied to an <em>area-sorted</em> list, so a tie —
-the smallest item — was truncated away). I lowered the threshold to 0.15% and raised the cap,
-then re-indexed: regions rose <strong>7,321 → 9,851</strong> and ties <strong>18 → 44</strong>, but query 5 still did
-not improve.</p>
-<p><strong>The remaining ceiling is the corpus, not the algorithm.</strong> Fashionpedia is womenswear- and
-runway-heavy; 44 ties in 3,200 images (~1.4%), few of them red, means there is very little
-correct material to retrieve. The mechanism itself demonstrably works when the garments exist
-— <em>green top / yellow skirt</em> goes from 1.00 to 0.10. The fix for query 5 is therefore
-<strong>dataset composition</strong> (blend in menswear/formal imagery), not a change to the ranker.</p>
-<p><em>This is the value of measurement: two plausible assumptions — "regions exist" and "more
-regions will fix it" — were both false, and only data revealed it.</em></p>
-<h3 id="43-qualitative-behaviour-on-the-five-official-queries">4.3 Qualitative behaviour on the five official queries</h3>
+<p><em>Red tie / white shirt</em> — query 5 — <strong>did not improve</strong>. Traced in data: the index held only <strong>18 tie regions / 3,200 images</strong>, because two filters removed small garments (0.5% area threshold; a 6-region cap applied to an <em>area-sorted</em> list, so a tie — the smallest item — was truncated). I lowered the threshold to 0.15% and raised the cap: regions <strong>7,321 → 9,851</strong>, ties <strong>18 → 44</strong> — and query 5 <em>still</em> didn't improve.</p>
+<p><strong>The remaining ceiling is the corpus, not the algorithm.</strong> Fashionpedia is womenswear/runway-heavy: 44 ties (~1.4%), few red. The mechanism demonstrably works where garments exist (1.00 → 0.10 above). The fix is <strong>dataset composition</strong> (blend in menswear/formal imagery), not a ranker change. <em>Two plausible assumptions — "regions exist" and "more regions will fix it" — were both false; only measurement revealed it.</em></p>
+<h3 id="43-official-queries-corpus">4.3 Official queries · corpus</h3>
 <table>
 <thead>
 <tr>
-<th>Query</th>
+<th>#</th>
 <th>Score</th>
 <th>Top result</th>
-<th>Assessment</th>
+<th></th>
 </tr>
 </thead>
 <tbody>
@@ -404,207 +288,113 @@ regions will fix it" — were both false, and only data revealed it.</em></p>
 <td>1</td>
 <td>0.942</td>
 <td><em>"a little girl in a </em><em>yellow raincoat</em><em> and red tights"</em></td>
-<td>⭐ exact match</td>
+<td>⭐ exact</td>
 </tr>
 <tr>
 <td>2</td>
 <td>0.916</td>
 <td><em>"a woman in a black suit and </em><em>white shirt</em><em>"</em></td>
-<td>✅ business attire correct; office <em>scene</em> is the weaker axis (corpus holds only ~198 office-like images)</td>
+<td>✅ attire right; office <em>scene</em> is the weak axis</td>
 </tr>
 <tr>
 <td>3</td>
 <td>0.906</td>
 <td><em>"a young girl sitting on a </em><em>bench in the park</em><em>"</em></td>
-<td>✅ scene + pose nailed; colour binding softer</td>
+<td>✅ scene + pose</td>
 </tr>
 <tr>
 <td>4</td>
 <td>0.896</td>
-<td><em>"a woman standing on the </em><em>sidewalk</em><em> in a white shirt and </em><em>jeans</em><em>"</em></td>
-<td>⭐ correct casual/street inference from a query containing <strong>no garment words at all</strong></td>
+<td><em>"on the </em><em>sidewalk</em><em> in a white shirt and </em><em>jeans</em><em>"</em></td>
+<td>⭐ inferred from <strong>no garment words</strong></td>
 </tr>
 <tr>
 <td>5</td>
 <td>0.702</td>
-<td><em>"a man in a vest and red pants on the runway"</em></td>
-<td>⚠️ weakest — corpus-limited (§4.2)</td>
+<td><em>"a man in a vest and red pants"</em></td>
+<td>⚠️ corpus-limited (§4.2)</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Latency:</strong> mean <strong>318 ms</strong> across the five queries (~150 ms warm; the first query pays a
-one-off cold-start cost).</p>
-<h3 id="44-corpus-composition-measured">4.4 Corpus composition (measured)</h3>
-<p>Zero-shot environment tagging over the 3,200 images confirms the required axes are present:
-urban street <strong>765</strong>, home interior <strong>391</strong>, park <strong>292</strong>, office <strong>198</strong>, with the remainder
-dominated by catalogue/runway "studio" imagery (1,177) — the known Fashionpedia bias, and the
-reason query 2's <em>scene</em> component is the weaker axis.</p>
+<p>Latency <strong>318 ms</strong> mean (~150 ms warm). Zero-shot environment tagging confirms the required axes: urban street <strong>765</strong>, home interior <strong>391</strong>, park <strong>292</strong>, office <strong>198</strong>; remainder catalogue/runway "studio" (1,177) — the Fashionpedia bias, and why query 2's scene component is weakest.</p>
 <hr />
-<h2 id="5-shortcomings-and-how-i-would-address-them">5. Shortcomings, and how I would address them</h2>
-<p>The assignment explicitly asks what the approach's weaknesses are. Honestly:</p>
+<h2 id="5-shortcomings-and-fixes">5. Shortcomings and fixes</h2>
 <table>
 <thead>
 <tr>
 <th>Shortcoming</th>
-<th>Why it happens</th>
-<th>How to fix</th>
+<th>Cause</th>
+<th>Fix</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Small garments (ties, belts) under-detected</strong></td>
-<td>area threshold + region cap dropped them; measured only 18 ties / 3,200 images</td>
-<td>lower threshold (done), or an accessory-specialised detector; weight regions by <em>saliency</em> not raw area</td>
+<td>Small garments under-detected</td>
+<td>area threshold + region cap; only 44 ties/3,200</td>
+<td>lower threshold (done); accessory-specialised detector; weight by <em>saliency</em> not area</td>
 </tr>
 <tr>
-<td><strong>Multi-person images bind incorrectly</strong></td>
-<td>SegFormer parses clothing, not <em>people</em> — a red tie on person A and a white shirt on person B can satisfy both bindings</td>
-<td>add a person detector and bind <strong>per person instance</strong>, requiring bindings to resolve within one individual</td>
+<td>Multi-person images bind wrongly</td>
+<td>SegFormer parses clothing, not <em>people</em> — a red tie on A and white shirt on B satisfies both</td>
+<td>person detector; require bindings to resolve <strong>within one individual</strong></td>
 </tr>
 <tr>
-<td><strong>Attribute confidences are uncalibrated</strong></td>
-<td>softmax over a vocabulary gives <em>relative</em>, not probabilistic, scores; scales differ per axis</td>
-<td>per-axis Platt scaling / temperature calibration on a small labelled set</td>
+<td>Uncalibrated attribute confidences</td>
+<td>softmax gives <em>relative</em>, not probabilistic, scores; scales differ per axis</td>
+<td>per-axis Platt/temperature calibration</td>
 </tr>
 <tr>
-<td><strong>Scene axis is corpus-limited</strong></td>
-<td>Fashionpedia is catalogue/runway-heavy; only ~6% office-like</td>
-<td>blend in a scene-rich people dataset (COCO/Places) — the loader is dataset-agnostic by design</td>
+<td>Scene axis corpus-limited</td>
+<td>Fashionpedia is catalogue-heavy (~6% office)</td>
+<td>blend a scene-rich people dataset — loader is dataset-agnostic by design</td>
 </tr>
 <tr>
-<td><strong>Rule-based parser misses negation/comparatives</strong></td>
-<td>"no tie", "more formal than" are out of grammar</td>
-<td>swap in a small instruction-tuned LLM emitting the <em>same</em> <code>QuerySpec</code> JSON — the interface already exists</td>
+<td>Parser misses negation/comparatives</td>
+<td>"no tie", "more formal than" out of grammar</td>
+<td>small instruction-tuned LLM emitting the <strong>same</strong> <code>QuerySpec</code> JSON — interface exists</td>
 </tr>
 <tr>
-<td><strong>Weights are hand-set</strong></td>
-<td>no labelled validation set within the time budget</td>
-<td>learn the fusion (§8.2)</td>
-</tr>
-<tr>
-<td><strong>Caption bias</strong></td>
-<td>BLIP describes salient subjects; may omit accessories</td>
-<td>ensemble a second captioner, or condition captioning on detected regions</td>
+<td>Hand-set weights</td>
+<td>no labelled set in the time budget</td>
+<td>learn the fusion (§7.2)</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="6-modular-code-logic-separated-from-data-criterion-2">6. Modular code — logic separated from data <em>(Criterion 2)</em></h2>
-<pre><code>configs/     models.yaml · paths.yaml · retrieval.yaml   ← every knob; no constant in code
-src/utils/   config loader, logger, typed schema (ImageRecord / RegionRecord / QuerySpec)
-src/models/  thin wrappers: FashionCLIP · BLIP · MPNet · SegFormer · CrossEncoder
-src/attributes/  vocabulary · zero-shot tagger · query parser
-src/database/    SQLite metadata store  +  FAISS vector store
-src/indexing/    PART A: dataset loader (dataset-agnostic) + indexer
-src/retrieval/   PART B: HybridScorer (4 signals) + Retriever (2-stage)
-src/evaluation/  official queries · contact sheet · compositionality swap test
-tests/       pure-logic unit tests (parsing + compositional binding)
-webapp/      optional Flask demo portal
-</code></pre>
-<p>Concretely: <strong>business logic never imports HuggingFace directly</strong> (only <code>src/models/</code>
-wrappers do), so swapping FashionCLIP → SigLIP is a one-line YAML change. <strong>Vectors live in
-FAISS, metadata in SQLite</strong> — never in filenames. Every stage passes typed dataclasses, so
-stages are independently testable, and the dataset loader only assumes <em>"a folder of
-images"</em> — Fashionpedia, DeepFashion, COCO or phone photos all work unchanged.</p>
+<h2 id="6-modular-code-scalability-zero-shot-criteria-24">6. Modular code · Scalability · Zero-shot <em>(Criteria 2–4)</em></h2>
+<p><strong>Modular — logic separated from data.</strong> <code>configs/*.yaml</code> holds every knob (no constant in code); <code>src/models/</code> wrappers are the <strong>only</strong> code importing HuggingFace, so FashionCLIP → SigLIP is a one-line YAML change; <strong>vectors in FAISS, metadata in SQLite — never in filenames</strong>; typed dataclasses (<code>ImageRecord</code>/<code>RegionRecord</code>/<code>QuerySpec</code>) pass between independently testable stages; the loader assumes only <em>"a folder of images"</em>, so Fashionpedia/DeepFashion/COCO/phone photos all work unchanged. <em>Filename-independence is structural: the dataset's filenames are MD5 hashes with zero semantic content, and <code>image_path</code> never enters any scoring computation.</em></p>
+<p><strong>Scalability to 1M+.</strong> The retrieval <strong>logic is size-invariant</strong>; only the index type changes. <em>Recall:</em> <code>IndexFlatIP</code> → <code>IndexIVFFlat</code>/HNSW is a <strong>one-line</strong> change in <code>VectorStore.build(index_type="ivf")</code> — ids and the <code>search()</code> contract are identical, so nothing else moves; O(N) → ~O(√N)/O(log N). <em>Rerank:</em> cost is <strong>independent of corpus size</strong> — only the fixed 400-candidate pool is scored — the key scalability property. <em>Memory:</em> 1M × 512-d fp16 ≈ <strong>1 GB</strong> global (regions ~2.3×); IVF-PQ compresses 8–32×. <em>Metadata:</em> SQLite is fine into low millions, and structured attributes enable <strong>SQL pre-filtering</strong> (<code>environment=office AND EXISTS a tie region</code>) to shrink the ANN space <em>before</em> search. <em>Indexing:</em> embarrassingly parallel — shard and merge FAISS shards. Measured <strong>3,200 images in ~11 min</strong> on one 4 GB laptop GPU (~0.2 s/image).</p>
+<p><strong>Zero-shot.</strong> <strong>Nothing is trained on this corpus or these queries</strong> — FashionCLIP, BLIP, MPNet, SegFormer are all off-the-shelf, and attributes come from <strong>zero-shot CLIP classification</strong> against an editable vocabulary. A new colour, garment, city or weather condition is added by editing <code>vocab.py</code> with <strong>no retraining</strong>. Query 4 is the demonstration: <em>"casual weekend outfit for a city walk"</em> has <strong>no garment label</strong>, yet returns sidewalk/jeans imagery because caption and attribute signals infer the vibe rather than matching a keyword.</p>
 <hr />
-<h2 id="7-scalability-to-1m-images-criterion-3">7. Scalability to 1M+ images <em>(Criterion 3)</em></h2>
-<p>The retrieval <strong>logic is size-invariant</strong>; only the index type changes.</p>
-<ul>
-<li><strong>Recall stage:</strong> <code>IndexFlatIP</code> → <code>IndexIVFFlat</code> or HNSW — a <em>one-line</em> change in
-  <code>VectorStore.build(index_type="ivf")</code>. Ids and the <code>search()</code> contract are identical, so
-  <strong>nothing else moves</strong>. Query cost goes from O(N) to ~O(√N)/O(log N).</li>
-<li><strong>Rerank stage:</strong> cost is <strong>independent of corpus size</strong> — only the fixed candidate pool
-  (400) is scored with expensive signals. This is the key scalability property.</li>
-<li><strong>Memory:</strong> 1M × 512-d fp16 ≈ <strong>1 GB</strong> for the global index; regions ~2.3× that. With
-  IVF-PQ compression (8–32×) the whole thing fits comfortably in RAM on one machine.</li>
-<li><strong>Metadata:</strong> SQLite is fine into the low millions; the <code>MetadataDB</code> seam allows Postgres/
-  DuckDB. Crucially, structured attributes enable <strong>SQL pre-filtering</strong> (<code>environment=office
-  AND EXISTS a tie region</code>) to shrink the ANN search space <em>before</em> it runs.</li>
-<li><strong>Indexing:</strong> embarrassingly parallel — shard images across workers/GPUs and merge FAISS
-  shards. Embeddings are computed once, offline. Measured: <strong>3,200 images in ~11 min</strong> on one
-  4 GB laptop GPU (~0.2 s/image) → ~57 GPU-hours for 1M on this hardware, or a few hours
-  across a modest cluster.</li>
-</ul>
-<hr />
-<h2 id="8-future-work-deliverable-4">8. Future work <em>(Deliverable 4)</em></h2>
-<h3 id="81-adding-locations-cities-places-and-weather">8.1 Adding locations (cities, places) and weather</h3>
-<p>Environment is already a <strong>first-class structured axis</strong>, so this is mostly a <em>data</em> change
-plus new scoring terms — no architectural rewrite:</p>
+<h2 id="7-future-work-deliverable-4">7. Future work <em>(Deliverable 4)</em></h2>
+<h3 id="71-adding-locations-cities-places-and-weather">7.1 Adding locations (cities, places) and weather</h3>
+<p>Environment is already a <strong>first-class structured axis</strong>, so this is mostly <em>data</em> plus new scoring terms — no architectural rewrite.</p>
 <ol>
-<li><strong>Vocabulary extension (no code path change).</strong> Add <code>weather = [sunny, rainy, snowy,
-   overcast…]</code> and richer <code>place</code> values to <code>src/attributes/vocab.py</code> with prompt templates.
-   FashionCLIP tags them <strong>zero-shot</strong> immediately; the parser gains synonyms. This alone
-   makes <em>"a raincoat on a rainy street"</em> prefer genuinely wet scenes.</li>
-<li><strong>Specialised classifiers for precision.</strong> Replace zero-shot tags with <strong>Places365</strong> for
-   scene/venue and a dedicated sky/weather classifier — stored as two more attribute axes and
-   two more (weighted) scoring terms.</li>
-<li><strong>Geo metadata + reverse geocoding.</strong> If images carry GPS EXIF, resolve to city/landmark
-   and store it. This enables a powerful <strong>hybrid</strong>: a <em>hard SQL geo filter</em> ("in Paris")
-   composed with <em>soft visual ranking</em> — exactly the pre-filter pattern from §7.</li>
-<li><strong>Landmark recognition</strong> for "in front of the Eiffel Tower" style queries — an embedding
-   lookup against a landmark gallery, added as another region-like signal.</li>
-<li><strong>Garment↔weather consistency prior.</strong> A light term rewarding agreement between garment
-   and weather (raincoat ⟷ rain, parka ⟷ snow) captures context the query <em>implies</em> but
-   doesn't state — and would let the system answer <em>"dressed for bad weather"</em>.</li>
+<li><strong>Vocabulary extension (no code-path change):</strong> add <code>weather = [sunny, rainy, snowy, overcast…]</code> and richer <code>place</code> values to <code>vocab.py</code> with prompt templates. FashionCLIP tags them <strong>zero-shot</strong> immediately; the parser gains synonyms. This alone makes <em>"a raincoat on a rainy street"</em> prefer genuinely wet scenes.</li>
+<li><strong>Specialised classifiers for precision:</strong> <strong>Places365</strong> for scene/venue and a sky/weather classifier, stored as two more attribute axes and two more weighted terms.</li>
+<li><strong>Geo metadata + reverse geocoding:</strong> resolve GPS EXIF to city/landmark. Enables a powerful hybrid — a <em>hard SQL geo filter</em> ("in Paris") composed with <em>soft visual ranking</em>, exactly the pre-filter pattern from §6.</li>
+<li><strong>Landmark recognition</strong> ("in front of the Eiffel Tower") via embedding lookup against a landmark gallery — another region-like signal.</li>
+<li><strong>Garment↔weather consistency prior:</strong> reward agreement (raincoat ⟷ rain, parka ⟷ snow), capturing context a query <em>implies</em> but doesn't state — enabling <em>"dressed for bad weather"</em>.</li>
 </ol>
-<p>Because each is just "another axis + another weighted signal", they slot into the existing
-fusion with no change to the retrieval flow.</p>
-<h3 id="82-improving-precision">8.2 Improving precision</h3>
-<p>Ordered by expected return on effort:</p>
+<p>Each is "another axis + another weighted signal", slotting into the existing fusion with no change to the retrieval flow.</p>
+<h3 id="72-improving-precision">7.2 Improving precision</h3>
 <ol>
-<li><strong>Build a labelled validation set</strong> — the highest-value next step. Without relevance
-   labels, tuning is guesswork; with a few hundred <code>(query, relevant_id)</code> pairs we get
-   <strong>precision@k / nDCG</strong> and every change becomes measurable. The harness already accepts
-   <code>--labels</code>.</li>
-<li><strong>Learn the fusion instead of hand-setting weights.</strong> With labels, fit logistic regression
-   or <strong>LambdaMART</strong> over the four signals — replaces four hand-tuned constants with a
-   trained ranker, and naturally learns <em>query-dependent</em> weighting.</li>
-<li><strong>Contrastive fine-tuning on hard negatives.</strong> LoRA-adapt FashionCLIP using
-   <strong>colour-swapped pairs</strong> as explicit negatives, pushing binding into the <em>encoder</em> rather
-   than only the scorer. This attacks the root cause identified in §1.</li>
-<li><strong>Stronger colour grounding.</strong> Ensemble the CLIP colour head with a classical <strong>CIELAB</strong>
-   dominant-colour estimate per region (robust to lighting/white balance), which should
-   directly lift queries 1, 3 and 5.</li>
-<li><strong>Per-person binding</strong> (see §5) — the biggest correctness fix for crowded scenes.</li>
-<li><strong>Cross-encoder reranking</strong>, already implemented behind a flag, enabled only after its
-   uplift is <em>measured</em> rather than assumed.</li>
-<li><strong>Query expansion</strong> for style inference: expand <em>"weekend casual"</em> into likely garments
-   via a learned style→garment prior, improving recall on vibe-only queries.</li>
+<li><strong>Build a labelled validation set</strong> — highest value. Without labels, tuning is guesswork; with a few hundred <code>(query, relevant_id)</code> pairs we get <strong>precision@k / nDCG</strong> and every change becomes measurable. The harness already accepts <code>--labels</code>.</li>
+<li><strong>Learn the fusion:</strong> logistic regression or <strong>LambdaMART</strong> over the four signals replaces hand-tuned constants and naturally learns <em>query-dependent</em> weighting.</li>
+<li><strong>Contrastive fine-tuning on hard negatives:</strong> LoRA-adapt FashionCLIP using <strong>colour-swapped pairs</strong> as explicit negatives, pushing binding into the <em>encoder</em> — attacking the root cause in §1.</li>
+<li><strong>Stronger colour grounding:</strong> ensemble the CLIP colour head with a classical <strong>CIELAB</strong> dominant-colour estimate per region (robust to lighting) — should lift queries 1, 3, 5.</li>
+<li><strong>Per-person binding</strong> (§5) — the biggest correctness fix for crowded scenes.</li>
+<li><strong>Cross-encoder reranking</strong> — implemented behind a flag, to be enabled only once its uplift is <em>measured</em>.</li>
+<li><strong>Query expansion</strong> for style inference: expand <em>"weekend casual"</em> into likely garments via a learned style→garment prior.</li>
 </ol>
 <hr />
-<h2 id="9-zero-shot-capability-criterion-4">9. Zero-shot capability <em>(Criterion 4)</em></h2>
-<p><strong>Nothing in the system is trained on this corpus or on the queries.</strong> FashionCLIP, BLIP,
-MPNet and SegFormer are all used off-the-shelf; attributes come from <strong>zero-shot CLIP
-classification</strong> against an editable vocabulary. A new concept — a colour, garment, city or
-weather condition — is added by editing <code>vocab.py</code>, with <strong>no retraining and no re-labelling</strong>
-(only re-tagging). Query 4 is the practical demonstration: <em>"casual weekend outfit for a city
-walk"</em> contains <strong>no garment label at all</strong>, yet returns sidewalk/jeans imagery because the
-caption and attribute signals infer the vibe rather than matching a keyword.</p>
-<hr />
-<h2 id="appendix-a-reproducing">Appendix A — Reproducing</h2>
+<h2 id="appendix-reproducing">Appendix — Reproducing</h2>
 <pre><code class="language-bash">pip install -r requirements.txt
-python main.py index                                   # Part A — build FAISS + SQLite
-python main.py query &quot;a red tie and a white shirt in a formal setting&quot; -k 10   # Part B
-python main.py evaluate                                # 5 official queries → contact sheet
-python main.py compositional                           # the colour-swap test of §4.1
-python webapp/app.py                                   # optional visual portal
-pytest -q                                              # unit tests (parsing + binding)
+python main.py index                                    # Part A — build FAISS + SQLite
+python main.py query &quot;a red tie and a white shirt&quot; -k 10  # Part B — top-k retrieval
+python main.py evaluate                                 # 5 official queries → contact sheet
+python main.py compositional                            # the colour-swap test of §4.1
+python webapp/app.py                                    # optional visual portal
+pytest -q                                               # unit tests
 </code></pre>
-<p><strong>Verification of the technical requirements</strong></p>
-<ul>
-<li><em>Part A / Part B are distinct modules:</em> <code>src/indexing/</code> and <code>src/retrieval/</code>.</li>
-<li><em>"Avoiding simple filename keyword matching"</em> — guaranteed structurally, not by promise:
-  the dataset's filenames are MD5 hashes (<code>003d41dd20f271d27219fe7ee6de727d.jpg</code>) with zero
-  semantic content, and <code>image_path</code> never enters any scoring computation — it appears in
-  the ranking layer only as a field carried through for display. Ranking reads embeddings
-  and structured attributes exclusively.</li>
-<li><em>Context awareness:</em> <code>"a woman in a red dress in a park"</code> parses to
-  <code>environment=park · upper_garment=dress · colors=red · binding(red→dress)</code> and returns
-  <em>"a woman in a red dress sitting on a bench"</em> at 0.966.</li>
-<li><em>Vector DB choice:</em> FAISS + SQLite — deliberately the simplest capable option, per the
-  assignment's instruction to spend effort on ML logic rather than re-implementing storage.</li>
-</ul>
-<h2 id="appendix-b-stack">Appendix B — Stack</h2>
-<p>FashionCLIP (<code>patrickjohncyh/fashion-clip</code>) · BLIP (<code>Salesforce/blip-image-captioning-base</code>)
-· MPNet (<code>all-mpnet-base-v2</code>) · SegFormer clothes parser (<code>mattmdjaga/segformer_b2_clothes</code>)
-· FAISS · SQLite. Hardware: single 4 GB NVIDIA RTX 2050.</p></body></html>
+<p><strong>Stack:</strong> FashionCLIP (<code>patrickjohncyh/fashion-clip</code>) · BLIP (<code>blip-image-captioning-base</code>) · MPNet (<code>all-mpnet-base-v2</code>) · SegFormer (<code>mattmdjaga/segformer_b2_clothes</code>) · FAISS · SQLite. Hardware: one 4 GB NVIDIA RTX 2050.</p></body></html>
