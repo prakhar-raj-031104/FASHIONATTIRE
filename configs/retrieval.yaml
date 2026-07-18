@@ -17,7 +17,8 @@ weights:
 
 search:
   # First-stage candidate pool pulled from FAISS before fine-grained re-scoring.
-  candidate_pool: 200
+  # Larger pool = better recall before the expensive rerank; cost is linear and small.
+  candidate_pool: 400
   top_k: 10
 
 attribute_match:
@@ -31,5 +32,10 @@ region_binding:
   # garment type and the color. This is the anti-CLIP-bag-of-words mechanism.
   color_weight: 0.5
   garment_weight: 0.5
+  # How multiple bindings combine. A multi-binding query is a CONJUNCTION:
+  #   mean   - partial credit for half-matches (too lenient)
+  #   min    - requires every binding (brittle if one region is missed)
+  #   hybrid - 0.5*mean + 0.5*min (default): rewards satisfying all, stays robust
+  aggregation: hybrid
   # If a query has no explicit garment-color bindings, region_binding is skipped and its
   # weight is redistributed to the other signals (see scorer.py).

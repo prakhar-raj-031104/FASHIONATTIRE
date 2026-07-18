@@ -34,8 +34,13 @@ segmenter:
   # ("red tie AND white shirt" vs "white tie AND red shirt").
   enabled: true
   model: mattmdjaga/segformer_b2_clothes
-  min_region_area_frac: 0.005   # ignore garment blobs smaller than 0.5% of the image
-  max_regions_per_image: 6
+  # MEASURED: at 0.005 only 18 tie regions existed across 3200 images, so "red tie" had
+  # nothing to bind to. Ties/belts/sunglasses occupy far less than 0.5% of an image.
+  min_region_area_frac: 0.0015
+  # Regions are sorted by area (desc) and truncated, so a small accessory was dropped
+  # whenever 6 larger garments were present. Raised so accessories survive alongside
+  # tops/bottoms/shoes.
+  max_regions_per_image: 10
 
 reranker:
   # OPTIONAL text<->text cross-encoder over captions. Off by default: it mostly re-scores

@@ -63,6 +63,39 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_compositional(args) -> int:
+    """Objective, label-free check that we beat vanilla CLIP on colour binding."""
+    import json
+
+    from src.evaluation.compositional import run_swap_test
+    from src.retrieval import Retriever
+
+    cfg = load_config()
+    retriever = Retriever(cfg)
+    try:
+        out = run_swap_test(retriever, k=args.k)
+    finally:
+        retriever.close()
+
+    print(f"\nColour-swap test @{args.k}  (lower = better compositional separation)")
+    print("-" * 78)
+    print(f"{'colour-swapped pair':<50}{'CLIP':>9}{'hybrid':>10}")
+    print("-" * 78)
+    for p in out["pairs"]:
+        print(f"{p['query_a'][:48]:<50}{p['clip_overlap']:>9.2f}{p['hybrid_overlap']:>10.2f}")
+    s = out["summary"]
+    print("-" * 78)
+    print(f"{'MEAN':<50}{s['vanilla_clip_mean_overlap']:>9.3f}"
+          f"{s['hybrid_mean_overlap']:>10.3f}")
+    print(f"\nrelative reduction vs vanilla CLIP: {s['relative_reduction_pct']:.1f}%")
+
+    out_path = cfg.path("outputs", "results") / "compositional.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(out, indent=2))
+    print(f"saved -> {out_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fashion & context retrieval CLI")
     sub = p.add_subparsers(dest="command", required=True)
@@ -82,6 +115,11 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--labels", default=None,
                     help="optional JSON {query: [relevant_image_ids]} for precision@k")
     pe.set_defaults(func=cmd_evaluate)
+
+    pc = sub.add_parser("compositional",
+                        help="colour-swap test: measure compositionality vs vanilla CLIP")
+    pc.add_argument("-k", type=int, default=10)
+    pc.set_defaults(func=cmd_compositional)
     return p
 
 

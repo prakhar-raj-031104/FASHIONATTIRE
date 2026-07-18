@@ -53,18 +53,57 @@ class HybridScorer:
         self.region_cfg = retrieval_cfg.get("region_binding", {})
 
     # --- individual signals -------------------------------------------- #
-    def _attribute_match(self, q: QuerySpec, attrs: Dict[str, Dict[str, float]]) -> float:
-        pairs: List[float] = []
+    def _attribute_scores(self, q: QuerySpec,
+                          candidates: List[ImageRecord]) -> np.ndarray:
+        """Attribute-match score per candidate, with PER-ATTRIBUTE normalization.
+
+        Why not just average the raw confidences? They come from a softmax *within each
+        axis*, so their natural scales differ (13 colors -> max ~0.3; 10 environments ->
+        max ~0.4). Averaging raw values lets the higher-scaled axis silently dominate a
+        multi-attribute query ("business attire INSIDE AN OFFICE"). Instead we min-max
+        normalize each requested (axis, value) across the candidate pool first, so every
+        requested attribute contributes on equal footing, then average.
+        """
+        # Attributes already consumed by a (colour, garment) binding are EXCLUDED here.
+        # Reason: this signal is order-agnostic — "red tie + white shirt" and "white tie +
+        # red shirt" both reduce to the colour set {red, white}, so counting those colours
+        # again would pull colour-swapped queries back TOGETHER and dilute the
+        # order-sensitive region_binding signal. Measured on the swap test: leaving them in
+        # made overlap@10 worse on exactly the compositional query. Unbound attributes
+        # (environment, style, unbound garments) still contribute normally.
+        bound_colors = {b.color for b in q.bindings if b.is_bound()}
+        bound_garments = {b.garment_type for b in q.bindings if b.is_bound()}
+
+        pairs = []
         for axis, values in q.attributes.items():
-            axis_conf = attrs.get(axis, {})
             for v in values:
-                pairs.append(float(axis_conf.get(v, 0.0)))
-        if not pairs:
-            return 0.0
-        if self.attr_cfg.get("mode", "soft") == "hard":
-            thr = self.attr_cfg.get("present_threshold", 0.25)
-            return float(np.mean([1.0 if p >= thr else 0.0 for p in pairs]))
-        return float(np.mean(pairs))
+                if axis == "colors" and v in bound_colors:
+                    continue
+                if axis in ("upper_garment", "lower_garment", "accessories") and v in bound_garments:
+                    continue
+                pairs.append((axis, v))
+
+        n = len(candidates)
+        if not pairs or n == 0:
+            # No unbound attributes left to match (e.g. "a bright yellow raincoat", where
+            # both colour and garment are consumed by the binding). Signal is INACTIVE —
+            # the caller drops it and redistributes its weight instead of letting a
+            # constant-zero column silently absorb 20% of the budget.
+            return np.zeros(n)
+
+        hard = self.attr_cfg.get("mode", "soft") == "hard"
+        thr = self.attr_cfg.get("present_threshold", 0.25)
+
+        cols = []
+        for axis, v in pairs:
+            col = np.array([
+                float(c.attributes.get(axis, {}).get(v, 0.0)) for c in candidates
+            ])
+            if hard:
+                cols.append((col >= thr).astype(np.float64))
+            else:
+                cols.append(_minmax(col))
+        return np.mean(np.stack(cols, axis=0), axis=0)
 
     def _region_binding(self, q: QuerySpec, rec: ImageRecord) -> float:
         bound = [b for b in q.bindings if b.is_bound()]
@@ -82,9 +121,20 @@ class HybridScorer:
                 c_conf = float(r.colors.get(b.color, 0.0))
                 best = max(best, gw * g_conf + cw * c_conf)
             per_binding.append(best)
-        # geometric-ish emphasis: an image must satisfy ALL bindings, so average is a
-        # reasonable aggregate; a min() would be harsher. Mean keeps partial credit.
-        return float(np.mean(per_binding))
+
+        # A query like "a red tie AND a white shirt" is a CONJUNCTION: satisfying only one
+        # binding should not score like satisfying both. Plain mean gives too much credit
+        # for a half-match; plain min is brittle (one missed segmentation zeroes the
+        # image). Default 'hybrid' = 0.5*mean + 0.5*min keeps partial credit while
+        # rewarding images that satisfy every binding.
+        mean_s = float(np.mean(per_binding))
+        min_s = float(np.min(per_binding))
+        agg = self.region_cfg.get("aggregation", "hybrid")
+        if agg == "min":
+            return min_s
+        if agg == "mean":
+            return mean_s
+        return 0.5 * mean_s + 0.5 * min_s
 
     # --- fusion --------------------------------------------------------- #
     def score(
@@ -106,17 +156,19 @@ class HybridScorer:
                             if (caption_vecs is not None and q_sent is not None
                                 and caption_vecs.shape[1] > 0)
                             else None),
-            "attribute_match": np.array(
-                [self._attribute_match(query, c.attributes) for c in candidates]),
+            "attribute_match": self._attribute_scores(query, candidates),
             "region_binding": np.array(
                 [self._region_binding(query, c) for c in candidates]),
         }
 
-        # which signals are active for THIS query?
+        # which signals are active for THIS query? A signal that is constant across the
+        # whole pool carries no ranking information, so it is dropped and its weight is
+        # redistributed to the signals that actually discriminate.
+        attr_raw = np.asarray(raw["attribute_match"], dtype=np.float64)
         active: Dict[str, bool] = {
             "global_clip": True,
             "caption_sim": raw["caption_sim"] is not None,
-            "attribute_match": bool(query.attributes),
+            "attribute_match": bool(query.attributes) and float(np.ptp(attr_raw)) > 1e-9,
             "region_binding": query.has_bindings(),
         }
 
